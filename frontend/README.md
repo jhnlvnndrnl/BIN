@@ -30,7 +30,7 @@ All items should be green before proceeding. Fix any issues `flutter doctor` fla
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/your-org/bin.git
+git clone https://github.com/jhnlvnndrnl/BIN
 cd bin/frontend
 ```
 
