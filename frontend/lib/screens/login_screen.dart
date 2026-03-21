@@ -335,10 +335,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Create Account
               GestureDetector(
-                onTap: () {
-                  // TODO: navigate to register screen
-                  Navigator.pushNamed(context, '/register');
-                },
+                onTap: () => Navigator.pushNamed(context, '/register'),
                 child: const Center(
                   child: Text(
                     'Create Account',
@@ -370,7 +367,7 @@ class _GoogleIcon extends StatelessWidget {
     );
   }
 }
-
+  
 class _GooglePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
