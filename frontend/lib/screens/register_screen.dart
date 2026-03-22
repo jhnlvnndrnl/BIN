@@ -59,17 +59,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       if (_isEmail(input)) {
         // ── Email sign up ──
-        await supabase.auth.signUp(
-          email: input,
-          password: password,
-        );
+        await supabase.auth.signUp(email: input, password: password);
         if (mounted) {
           _showSnackBar('Check your email to confirm your account!');
           Navigator.pushReplacementNamed(context, '/login');
         }
       } else {
         // ── Phone / SMS sign up ──
-        await supabase.auth.signInWithOtp(phone: input);
+        await supabase.auth.signUp(phone: input, password: password);
         if (mounted) {
           _showSnackBar('OTP sent to $input');
           Navigator.pushNamed(context, '/otp', arguments: input);
@@ -85,9 +82,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -105,7 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               // LOGO
               const Center(
                 child: Text(
-                  'LOGO',
+                  'ALEXUS',
                   style: TextStyle(
                     fontSize: 40,
                     fontWeight: FontWeight.w300,
@@ -264,10 +261,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: const Center(
                   child: Text(
                     'Already has account?',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFFAAAAAA),
-                    ),
+                    style: TextStyle(fontSize: 13, color: Color(0xFFAAAAAA)),
                   ),
                 ),
               ),

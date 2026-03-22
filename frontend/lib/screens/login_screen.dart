@@ -37,10 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
+      await supabase.auth.signInWithPassword(email: email, password: password);
       // Navigate to home on success
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
@@ -79,8 +76,10 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       await supabase.auth.signInWithOtp(phone: phone);
-      if (mounted) _showSnackBar('OTP sent to $phone');
-      // TODO: navigate to OTP verification screen
+      if (mounted) {
+        _showSnackBar('OTP sent to $phone');
+        Navigator.pushNamed(context, '/otp', arguments: phone);
+      }
     } on AuthException catch (e) {
       _showSnackBar(e.message);
     } catch (e) {
@@ -92,9 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Helpers ───────────────────────────────────────────────────────
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<String?> _showPhoneDialog() async {
@@ -106,9 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(
-            hintText: '+639XXXXXXXXX',
-          ),
+          decoration: const InputDecoration(hintText: '+639XXXXXXXXX'),
         ),
         actions: [
           TextButton(
@@ -139,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // LOGO
               const Center(
                 child: Text(
-                  'LOGO',
+                  'BIN',
                   style: TextStyle(
                     fontSize: 40,
                     fontWeight: FontWeight.w300,
@@ -339,10 +336,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: const Center(
                   child: Text(
                     'Create Account',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFFAAAAAA),
-                    ),
+                    style: TextStyle(fontSize: 13, color: Color(0xFFAAAAAA)),
                   ),
                 ),
               ),
@@ -367,7 +361,7 @@ class _GoogleIcon extends StatelessWidget {
     );
   }
 }
-  
+
 class _GooglePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -376,16 +370,58 @@ class _GooglePainter extends CustomPainter {
     final bgPaint = Paint()..color = Colors.white;
     canvas.drawCircle(center, radius, bgPaint);
     final rect = Rect.fromCircle(center: center, radius: radius * 0.85);
-    canvas.drawArc(rect, -2.4, 1.6, false,
-        Paint()..color = const Color(0xFFEA4335)..style = PaintingStyle.stroke..strokeWidth = size.width * 0.18..strokeCap = StrokeCap.round);
-    canvas.drawArc(rect, -0.8, -1.6, false,
-        Paint()..color = const Color(0xFF4285F4)..style = PaintingStyle.stroke..strokeWidth = size.width * 0.18..strokeCap = StrokeCap.round);
-    canvas.drawArc(rect, 0.8, 1.6, false,
-        Paint()..color = const Color(0xFFFBBC05)..style = PaintingStyle.stroke..strokeWidth = size.width * 0.18..strokeCap = StrokeCap.round);
-    canvas.drawArc(rect, 2.4, 0.8, false,
-        Paint()..color = const Color(0xFF34A853)..style = PaintingStyle.stroke..strokeWidth = size.width * 0.18..strokeCap = StrokeCap.round);
-    canvas.drawLine(Offset(center.dx, center.dy), Offset(center.dx + radius * 0.85, center.dy),
-        Paint()..color = const Color(0xFF4285F4)..strokeWidth = size.width * 0.18..strokeCap = StrokeCap.round);
+    canvas.drawArc(
+      rect,
+      -2.4,
+      1.6,
+      false,
+      Paint()
+        ..color = const Color(0xFFEA4335)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.18
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawArc(
+      rect,
+      -0.8,
+      -1.6,
+      false,
+      Paint()
+        ..color = const Color(0xFF4285F4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.18
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawArc(
+      rect,
+      0.8,
+      1.6,
+      false,
+      Paint()
+        ..color = const Color(0xFFFBBC05)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.18
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawArc(
+      rect,
+      2.4,
+      0.8,
+      false,
+      Paint()
+        ..color = const Color(0xFF34A853)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.18
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy),
+      Offset(center.dx + radius * 0.85, center.dy),
+      Paint()
+        ..color = const Color(0xFF4285F4)
+        ..strokeWidth = size.width * 0.18
+        ..strokeCap = StrokeCap.round,
+    );
   }
 
   @override
