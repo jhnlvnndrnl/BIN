@@ -20,13 +20,19 @@ SEMAPHORE_API_KEY = os.getenv("SEMAPHORE_API_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 @app.post("/webhook/send-sms")
-async def send_supabase_sms(payload: SMSPayload, x_webhook_secret: Optional[str] = Header(None)):
+async def send_supabase_sms(payload: SMSPayload, authorization: Optional[str] = Header(None)):
     """
     Supabase Custom SMS Webhook Endpoint.
     This routes the OTP code from Supabase to Semaphore SMS.
     """
-    # 1. Security Check (ensure only Supabase can call this endpoint)
-    if x_webhook_secret != WEBHOOK_SECRET:
+    # 1. Security Check
+    # Supabase normally sends its secret string inside the Authorization header as "Bearer <secret>"
+    # We strip "Bearer " if it exists to strictly check the secret.
+    incoming_secret = None
+    if authorization:
+        incoming_secret = authorization.replace("Bearer ", "").strip()
+        
+    if WEBHOOK_SECRET and incoming_secret != WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     phone_number = payload.user.get("phone")
