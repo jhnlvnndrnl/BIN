@@ -6,22 +6,37 @@ from pydantic import BaseModel
 from typing import Optional
 import firebase_admin
 from firebase_admin import credentials, auth
+from dotenv import load_dotenv
+load_dotenv()  # <--- loads variables from .env into os.environ
 
-# Load Firebase from ENV ONLY (safe for Railway)
-service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+# ─────────────────────────────────────────────
+# Load Firebase Credentials (File or JSON String)
+# ─────────────────────────────────────────────
+firebase_env = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "./serviceAccountKey.json")
 
-if not service_account_json:
-    raise Exception("FIREBASE_SERVICE_ACCOUNT is not set")
+if firebase_env.strip().startswith("{"):
+    # JSON string from ENV
+    cred = credentials.Certificate(json.loads(firebase_env))
+else:
+    # Path to local JSON file
+    if not os.path.isfile(firebase_env):
+        raise Exception(f"Firebase service account file not found at {firebase_env}")
+    cred = credentials.Certificate(firebase_env)
 
-cred = credentials.Certificate(json.loads(service_account_json))
 firebase_admin.initialize_app(cred)
 
+# ─────────────────────────────────────────────
+# Load Supabase ENV
+# ─────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise Exception("Supabase ENV variables missing")
+    raise Exception("Supabase ENV variables missing: SUPABASE_URL or SUPABASE_SERVICE_KEY")
 
+# ─────────────────────────────────────────────
+# Initialize FastAPI
+# ─────────────────────────────────────────────
 app = FastAPI(title="BIN Backend")
 
 # ─────────────────────────────────────────────
@@ -41,13 +56,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-
 # ─────────────────────────────────────────────
-# Models
+# Pydantic Models
 # ─────────────────────────────────────────────
 class UserProfile(BaseModel):
     display_name: Optional[str] = None
-
 
 # ─────────────────────────────────────────────
 # UPSERT PROFILE
@@ -84,7 +97,6 @@ async def upsert_profile(
 
     return {"status": "success", "uid": uid}
 
-
 # ─────────────────────────────────────────────
 # GET PROFILE (CHECK IF USER EXISTS)
 # ─────────────────────────────────────────────
@@ -107,7 +119,6 @@ async def get_profile(user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Profile not found")
 
     return data[0]
-
 
 # ─────────────────────────────────────────────
 # Health Check
