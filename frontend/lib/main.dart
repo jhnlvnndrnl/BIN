@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/otp_screen.dart';
@@ -8,7 +9,6 @@ import 'screens/otp_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables from .env
   await dotenv.load(fileName: '.env');
 
   await Supabase.initialize(
@@ -19,7 +19,6 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-// Global Supabase client — import & use this anywhere in your app
 final supabase = Supabase.instance.client;
 
 class MyApp extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../main.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class OtpScreen extends StatefulWidget {
   const OtpScreen({super.key});
@@ -10,10 +11,10 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final _otpController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   bool _isLoading = false;
 
-  static const _green = Color(0xFF4CAF50);
+  static const Color _green = Color(0xFF4CAF50);
 
   @override
   void dispose() {
@@ -21,7 +22,7 @@ class _OtpScreenState extends State<OtpScreen> {
     super.dispose();
   }
 
-  Future<void> _verifyOtp(String phone) async {
+  Future<void> _verifyOtp(String verificationId) async {
     final code = _otpController.text.trim();
 
     if (code.isEmpty) {
@@ -32,21 +33,69 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await supabase.auth.verifyOTP(
-        type: OtpType.sms,
-        token: code,
-        phone: phone,
+      // ✅ STEP 1: Verify OTP with Firebase
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: code,
       );
 
-      if (mounted) {
-        _showSnackBar('Verification successful!');
-        // Ideally navigate to '/home' or a dashboard. For now, we pop or go to login if home doesn't exist
-        Navigator.pushReplacementNamed(context, '/login');
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+
+      final idToken = await userCredential.user?.getIdToken();
+
+      if (idToken == null) {
+        _showSnackBar('Failed to get authentication token');
+        return;
       }
-    } on AuthException catch (e) {
-      _showSnackBar(e.message);
+
+      final backendUrl = dotenv.env['BACKEND_URL'];
+
+      if (backendUrl == null) {
+        _showSnackBar('Backend URL not configured');
+        return;
+      }
+
+      // ✅ STEP 2: Check if user exists
+      final checkResponse = await http.get(
+        Uri.parse('$backendUrl/profile'),
+        headers: {'Authorization': 'Bearer $idToken'},
+      );
+
+      if (checkResponse.statusCode == 200) {
+        // Existing user
+        if (mounted) {
+          _showSnackBar('Welcome back!');
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } else if (checkResponse.statusCode == 404) {
+        // New user → create profile
+        final createResponse = await http.post(
+          Uri.parse('$backendUrl/profile'),
+          headers: {
+            'Authorization': 'Bearer $idToken',
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        );
+
+        if (createResponse.statusCode == 200 ||
+            createResponse.statusCode == 201) {
+          if (mounted) {
+            _showSnackBar('Account created successfully!');
+            Navigator.pushReplacementNamed(context, '/home');
+          }
+        } else {
+          _showSnackBar('Failed to create profile');
+        }
+      } else {
+        _showSnackBar('Server error: ${checkResponse.statusCode}');
+      }
+    } on FirebaseAuthException catch (e) {
+      _showSnackBar(e.message ?? 'Invalid OTP code');
     } catch (e) {
-      _showSnackBar('Error verifying OTP');
+      _showSnackBar('Something went wrong');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -60,9 +109,11 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get the phone number passed from the previous screen
-    final phoneArgs = ModalRoute.of(context)?.settings.arguments as String?;
-    final phone = phoneArgs ?? '';
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, String>?;
+
+    final phone = args?['phone'] ?? '';
+    final verificationId = args?['verificationId'] ?? '';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -91,9 +142,11 @@ class _OtpScreenState extends State<OtpScreen> {
                   color: Colors.black87,
                 ),
               ),
+
               const SizedBox(height: 8),
+
               Text(
-                'We have sent a verification code to $phone',
+                'We sent a verification code to $phone',
                 style: const TextStyle(fontSize: 14, color: Color(0xFF888888)),
               ),
 
@@ -103,6 +156,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 'verification code',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
               ),
+
               const SizedBox(height: 6),
 
               TextField(
@@ -133,7 +187,7 @@ class _OtpScreenState extends State<OtpScreen> {
               const Spacer(),
 
               ElevatedButton(
-                onPressed: _isLoading ? null : () => _verifyOtp(phone),
+                onPressed: _isLoading ? null : () => _verifyOtp(verificationId),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,
@@ -141,7 +195,6 @@ class _OtpScreenState extends State<OtpScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
-                  elevation: 0,
                 ),
                 child: _isLoading
                     ? const SizedBox(

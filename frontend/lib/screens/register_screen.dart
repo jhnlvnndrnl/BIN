@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -36,7 +37,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
 
-    // Validations
     if (input.isEmpty || password.isEmpty || confirm.isEmpty) {
       _showSnackBar('Please fill in all fields');
       return;
@@ -58,19 +58,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       if (_isEmail(input)) {
-        // ── Email sign up ──
+        // ── Email sign up via Supabase ──
         await supabase.auth.signUp(email: input, password: password);
         if (mounted) {
           _showSnackBar('Check your email to confirm your account!');
           Navigator.pushReplacementNamed(context, '/login');
         }
       } else {
-        // ── Phone / SMS sign up ──
-        await supabase.auth.signUp(phone: input, password: password);
-        if (mounted) {
-          _showSnackBar('OTP sent to $input');
-          Navigator.pushNamed(context, '/otp', arguments: input);
-        }
+        // ── Phone sign up via Firebase ──
+        await FirebaseAuth.instance.verifyPhoneNumber(
+          phoneNumber: input,
+          verificationCompleted: (PhoneAuthCredential credential) async {
+            await FirebaseAuth.instance.signInWithCredential(credential);
+            if (mounted) Navigator.pushReplacementNamed(context, '/home');
+          },
+          verificationFailed: (FirebaseAuthException e) {
+            _showSnackBar(e.message ?? 'Verification failed');
+          },
+          codeSent: (String verificationId, int? resendToken) {
+            if (mounted) {
+              _showSnackBar('OTP sent to $input');
+              Navigator.pushNamed(
+                context,
+                '/otp',
+                arguments: {'phone': input, 'verificationId': verificationId},
+              );
+            }
+          },
+          codeAutoRetrievalTimeout: (_) {},
+        );
       }
     } on AuthException catch (e) {
       _showSnackBar(e.message);
@@ -89,6 +105,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... your existing build method is unchanged, just call _register()
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -98,11 +115,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(flex: 2),
-
-              // LOGO
               const Center(
                 child: Text(
-                  'ALEXUS',
+                  'BIN',
                   style: TextStyle(
                     fontSize: 40,
                     fontWeight: FontWeight.w300,
@@ -111,10 +126,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const Spacer(flex: 2),
-
-              // Email or Mobile Number
               const Text(
                 'email or mobile number',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -140,10 +152,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Password
               const Text(
                 'password',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -180,10 +189,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Confirm Password
               const Text(
                 'confirm password',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -220,10 +226,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const Spacer(flex: 2),
-
-              // Continue button
               ElevatedButton(
                 onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(
@@ -252,10 +255,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
               ),
-
               const SizedBox(height: 16),
-
-              // Already has account
               GestureDetector(
                 onTap: () => Navigator.pushReplacementNamed(context, '/login'),
                 child: const Center(
@@ -265,7 +265,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const Spacer(flex: 1),
             ],
           ),

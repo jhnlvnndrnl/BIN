@@ -1,72 +1,117 @@
 import os
+import json
 import httpx
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Optional
-from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials, auth
 
-# Load environment variables from the .env file locally
-load_dotenv()
+# Load Firebase from ENV ONLY (safe for Railway)
+service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+
+if not service_account_json:
+    raise Exception("FIREBASE_SERVICE_ACCOUNT is not set")
+
+cred = credentials.Certificate(json.loads(service_account_json))
+firebase_admin.initialize_app(cred)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    raise Exception("Supabase ENV variables missing")
 
 app = FastAPI(title="BIN Backend")
 
-# We define the structure of the data Supabase will send
-class SMSPayload(BaseModel):
-    user: dict
-    sms: dict
+# ─────────────────────────────────────────────
+# Verify Firebase Token
+# ─────────────────────────────────────────────
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
 
-# Environment variables loaded securely from .env or Railway Deployments
-SEMAPHORE_API_KEY = os.getenv("SEMAPHORE_API_KEY")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+    token = authorization.split(" ")[1]
 
-@app.post("/webhook/send-sms")
-async def send_supabase_sms(payload: SMSPayload, authorization: Optional[str] = Header(None)):
-    """
-    Supabase Custom SMS Webhook Endpoint.
-    This routes the OTP code from Supabase to Semaphore SMS.
-    """
-    # 1. Security Check
-    # Supabase normally sends its secret string inside the Authorization header as "Bearer <secret>"
-    # We strip "Bearer " if it exists to strictly check the secret.
-    incoming_secret = None
-    if authorization:
-        incoming_secret = authorization.replace("Bearer ", "").strip()
-        
-    # Temporarily bypass strict secret matching to see if the payload goes through
-    # if WEBHOOK_SECRET and incoming_secret != WEBHOOK_SECRET:
-    #     raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except auth.ExpiredIdTokenError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    phone_number = payload.user.get("phone")
-    otp_code = payload.sms.get("otp")
 
-    if not phone_number or not otp_code:
-        raise HTTPException(status_code=400, detail="Missing phone or OTP in payload")
+# ─────────────────────────────────────────────
+# Models
+# ─────────────────────────────────────────────
+class UserProfile(BaseModel):
+    display_name: Optional[str] = None
 
-    # 2. Prepare the text message content
-    message = f"Your BIN verification code is {otp_code}. Do not share this with anyone."
 
-    # 3. Call Semaphore API to send the text
+# ─────────────────────────────────────────────
+# UPSERT PROFILE
+# ─────────────────────────────────────────────
+@app.post("/profile")
+async def upsert_profile(
+    profile: UserProfile = UserProfile(),
+    user=Depends(get_current_user)
+):
+    uid = user["uid"]
+    phone = user.get("phone_number")
+
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            "https://api.semaphore.co/api/v4/messages",
-            data={
-                "apikey": SEMAPHORE_API_KEY,
-                "number": phone_number,
-                "message": message,
-                "sendername": "ALEXUS"
+            f"{SUPABASE_URL}/rest/v1/profiles",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates"
+            },
+            json={
+                "id": uid,
+                "phone": phone,
+                "display_name": profile.display_name
             }
         )
 
-    # 4. Respond to Supabase
-    if response.status_code == 200:
-        return {"status": "success", "message": "OTP sent via Semaphore"}
-    else:
-        # If Semaphore failed, report the error back
+    if response.status_code not in (200, 201):
         raise HTTPException(
-            status_code=response.status_code, 
-            detail=f"Semaphore API Error: {response.text}"
+            status_code=500,
+            detail=f"Supabase error: {response.text}"
         )
 
+    return {"status": "success", "uid": uid}
+
+
+# ─────────────────────────────────────────────
+# GET PROFILE (CHECK IF USER EXISTS)
+# ─────────────────────────────────────────────
+@app.get("/profile")
+async def get_profile(user=Depends(get_current_user)):
+    uid = user["uid"]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{uid}",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            }
+        )
+
+    data = response.json()
+
+    if not data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    return data[0]
+
+
+# ─────────────────────────────────────────────
+# Health Check
+# ─────────────────────────────────────────────
 @app.get("/")
 def health_check():
-    return {"status": "FastAPI Backend is running"}
+    return {"status": "BIN Backend is running"}
