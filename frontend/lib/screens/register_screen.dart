@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../main.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -11,7 +9,7 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _emailOrPhoneController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
@@ -23,26 +21,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    _emailOrPhoneController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
   bool _isPhone(String value) => RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value);
-  bool _isEmail(String value) => RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value);
 
   Future<void> _register() async {
-    final input = _emailOrPhoneController.text.trim();
+    final phone = _phoneController.text.trim();
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
 
-    if (input.isEmpty || password.isEmpty || confirm.isEmpty) {
+    if (phone.isEmpty || password.isEmpty || confirm.isEmpty) {
       _showSnackBar('Please fill in all fields');
       return;
     }
-    if (!_isEmail(input) && !_isPhone(input)) {
-      _showSnackBar('Enter a valid email or phone number');
+    if (!_isPhone(phone)) {
+      _showSnackBar('Enter a valid phone number (e.g. +639123456789)');
       return;
     }
     if (password != confirm) {
@@ -57,55 +54,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      if (_isEmail(input)) {
-        // ── Email sign up via Supabase ──
-        await supabase.auth.signUp(email: input, password: password);
-        if (mounted) {
-          _showSnackBar('Check your email to confirm your account!');
-          Navigator.pushReplacementNamed(context, '/login');
-        }
-      } else {
-        // ── Phone sign up via Firebase ──
-        await FirebaseAuth.instance.verifyPhoneNumber(
-          phoneNumber: input,
-          verificationCompleted: (PhoneAuthCredential credential) async {
-            await FirebaseAuth.instance.signInWithCredential(credential);
-            if (mounted) Navigator.pushReplacementNamed(context, '/home');
-          },
-          verificationFailed: (FirebaseAuthException e) {
-            _showSnackBar(e.message ?? 'Verification failed');
-          },
-          codeSent: (String verificationId, int? resendToken) {
-            if (mounted) {
-              _showSnackBar('OTP sent to $input');
-              Navigator.pushNamed(
-                context,
-                '/otp',
-                arguments: {'phone': input, 'verificationId': verificationId},
-              );
-            }
-          },
-          codeAutoRetrievalTimeout: (_) {},
-        );
-      }
-    } on AuthException catch (e) {
-      _showSnackBar(e.message);
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // Auto-verification (Android only)
+          await FirebaseAuth.instance.signInWithCredential(credential);
+          if (mounted) Navigator.pushReplacementNamed(context, '/home');
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          _showSnackBar(e.message ?? 'Verification failed');
+          setState(() => _isLoading = false);
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          setState(() => _isLoading = false);
+          if (mounted) {
+            _showSnackBar('OTP sent to $phone');
+            Navigator.pushNamed(
+              context,
+              '/otp',
+              arguments: {
+                'phone': phone,
+                'verificationId': verificationId,
+                'password': password, // pass password to save in profile later
+              },
+            );
+          }
+        },
+        codeAutoRetrievalTimeout: (_) {},
+      );
     } catch (e) {
       _showSnackBar('Unexpected error occurred');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    // ... your existing build method is unchanged, just call _register()
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -128,29 +116,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const Spacer(flex: 2),
               const Text(
-                'email or mobile number',
+                'mobile number',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
               ),
               const SizedBox(height: 6),
               TextField(
-                controller: _emailOrPhoneController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _green),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: _inputStyle(),
               ),
               const SizedBox(height: 16),
               const Text(
@@ -161,21 +134,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _green),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                decoration: _inputStyle().copyWith(
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
@@ -198,21 +157,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _confirmPasswordController,
                 obscureText: _obscureConfirm,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _green),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                decoration: _inputStyle().copyWith(
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureConfirm
@@ -260,7 +205,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 onTap: () => Navigator.pushReplacementNamed(context, '/login'),
                 child: const Center(
                   child: Text(
-                    'Already has account?',
+                    'Already have an account?',
                     style: TextStyle(fontSize: 13, color: Color(0xFFAAAAAA)),
                   ),
                 ),
@@ -270,6 +215,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  InputDecoration _inputStyle() {
+    return InputDecoration(
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _green),
+      ),
+      filled: true,
+      fillColor: Colors.white,
     );
   }
 }

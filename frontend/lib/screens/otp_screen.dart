@@ -33,16 +33,14 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // ✅ STEP 1: Verify OTP with Firebase
+      // STEP 1: Verify OTP with Firebase
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId,
         smsCode: code,
       );
 
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(
-        credential,
-      );
-
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
       final idToken = await userCredential.user?.getIdToken();
 
       if (idToken == null) {
@@ -51,26 +49,25 @@ class _OtpScreenState extends State<OtpScreen> {
       }
 
       final backendUrl = dotenv.env['BACKEND_URL'];
-
       if (backendUrl == null) {
         _showSnackBar('Backend URL not configured');
         return;
       }
 
-      // ✅ STEP 2: Check if user exists
+      // STEP 2: Check if profile already exists
       final checkResponse = await http.get(
         Uri.parse('$backendUrl/profile'),
         headers: {'Authorization': 'Bearer $idToken'},
       );
 
       if (checkResponse.statusCode == 200) {
-        // Existing user
+        // Existing user — go to home
         if (mounted) {
           _showSnackBar('Welcome back!');
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else if (checkResponse.statusCode == 404) {
-        // New user → create profile
+        // New user — create profile in Supabase via backend
         final createResponse = await http.post(
           Uri.parse('$backendUrl/profile'),
           headers: {
@@ -87,7 +84,7 @@ class _OtpScreenState extends State<OtpScreen> {
             Navigator.pushReplacementNamed(context, '/home');
           }
         } else {
-          _showSnackBar('Failed to create profile');
+          _showSnackBar('Failed to create profile: ${createResponse.body}');
         }
       } else {
         _showSnackBar('Server error: ${checkResponse.statusCode}');
@@ -102,15 +99,14 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final args =
-        ModalRoute.of(context)?.settings.arguments as Map<String, String>?;
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
 
     final phone = args?['phone'] ?? '';
     final verificationId = args?['verificationId'] ?? '';
@@ -133,7 +129,6 @@ class _OtpScreenState extends State<OtpScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
-
               const Text(
                 'Enter OTP',
                 style: TextStyle(
@@ -142,23 +137,18 @@ class _OtpScreenState extends State<OtpScreen> {
                   color: Colors.black87,
                 ),
               ),
-
               const SizedBox(height: 8),
-
               Text(
                 'We sent a verification code to $phone',
-                style: const TextStyle(fontSize: 14, color: Color(0xFF888888)),
+                style:
+                    const TextStyle(fontSize: 14, color: Color(0xFF888888)),
               ),
-
               const SizedBox(height: 48),
-
               const Text(
                 'verification code',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
               ),
-
               const SizedBox(height: 6),
-
               TextField(
                 controller: _otpController,
                 keyboardType: TextInputType.number,
@@ -168,12 +158,11 @@ class _OtpScreenState extends State<OtpScreen> {
                 decoration: InputDecoration(
                   counterText: "",
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
+                      horizontal: 16, vertical: 16),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                    borderSide:
+                        const BorderSide(color: Color(0xFFDDDDDD)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -183,11 +172,10 @@ class _OtpScreenState extends State<OtpScreen> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const Spacer(),
-
               ElevatedButton(
-                onPressed: _isLoading ? null : () => _verifyOtp(verificationId),
+                onPressed:
+                    _isLoading ? null : () => _verifyOtp(verificationId),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,
@@ -213,7 +201,6 @@ class _OtpScreenState extends State<OtpScreen> {
                         ),
                       ),
               ),
-
               const SizedBox(height: 32),
             ],
           ),
