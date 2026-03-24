@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../main.dart'; // make sure supabase client is imported here
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,50 +30,61 @@ class _LoginScreenState extends State<LoginScreen> {
       _showSnackBar('Please enter your phone number');
       return;
     }
+
     if (!_isPhone(phone)) {
       _showSnackBar('Enter a valid phone number (e.g. +639123456789)');
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
 
     try {
+      // Check if user exists in Supabase
+      final List<dynamic> data = await supabase
+          .from('profiles')
+          .select()
+          .eq('phone', phone);
+
+      if (data.isEmpty) {
+        _showSnackBar('Account does not exist');
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      // Proceed with Firebase SMS verification
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-verification (Android only)
           await FirebaseAuth.instance.signInWithCredential(credential);
-          if (mounted) Navigator.pushReplacementNamed(context, '/home');
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/home');
         },
         verificationFailed: (FirebaseAuthException e) {
           _showSnackBar(e.message ?? 'Verification failed');
-          setState(() => _isLoading = false);
+          if (mounted) setState(() => _isLoading = false);
         },
         codeSent: (String verificationId, int? resendToken) {
+          if (!mounted) return;
           setState(() => _isLoading = false);
-          if (mounted) {
-            _showSnackBar('OTP sent to $phone');
-            Navigator.pushNamed(
-              context,
-              '/otp',
-              arguments: {
-                'phone': phone,
-                'verificationId': verificationId,
-              },
-            );
-          }
+          Navigator.pushNamed(
+            context,
+            '/otp',
+            arguments: {'phone': phone, 'verificationId': verificationId},
+          );
         },
         codeAutoRetrievalTimeout: (_) {},
       );
     } catch (e) {
-      _showSnackBar('Unexpected error occurred');
-      setState(() => _isLoading = false);
+      _showSnackBar('Unexpected error occurred: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    if (!mounted) return; // ensure widget still exists
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -109,11 +121,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration: InputDecoration(
                   hintText: '+639XXXXXXXXX',
                   contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: Color(0xFFDDDDDD)),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -154,7 +167,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 16),
               GestureDetector(
-                onTap: () => Navigator.pushNamed(context, '/register'),
+                onTap: () =>
+                    Navigator.pushReplacementNamed(context, '/register'),
                 child: const Center(
                   child: Text(
                     'Create Account',

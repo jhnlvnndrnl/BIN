@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/otp_screen.dart';
+import 'screens/name_address_screen.dart';
 import 'screens/home_screen.dart';
 
 Future<void> main() async {
@@ -39,11 +40,31 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       initialRoute: '/login',
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/otp': (context) => const OtpScreen(),
-        '/home': (context) => const HomeScreen(),
+      onGenerateRoute: (settings) {
+        // Use onGenerateRoute to pass arguments dynamically
+        switch (settings.name) {
+          case '/login':
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+          case '/register':
+            return MaterialPageRoute(builder: (_) => const RegisterScreen());
+          case '/otp':
+            final args = settings.arguments as Map<String, dynamic>;
+            return MaterialPageRoute(
+              builder: (_) => OTPScreen(
+                phone: args['phone'],
+                verificationId: args['verificationId'],
+              ),
+            );
+          case '/name_address':
+            final args = settings.arguments as Map<String, dynamic>;
+            return MaterialPageRoute(
+              builder: (_) => NameAddressScreen(phone: args['phone']),
+            );
+          case '/home':
+            return MaterialPageRoute(builder: (_) => const HomeScreen());
+          default:
+            return null;
+        }
       },
     );
   }
