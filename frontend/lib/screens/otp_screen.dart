@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -11,22 +12,36 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final TextEditingController _otpController = TextEditingController();
-  bool _isLoading = false;
+  final List<TextEditingController> _controllers =
+      List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
+  bool _isLoading = false;
   static const Color _green = Color(0xFF4CAF50);
 
   @override
   void dispose() {
-    _otpController.dispose();
+    for (final c in _controllers) c.dispose();
+    for (final f in _focusNodes) f.dispose();
     super.dispose();
   }
 
-  Future<void> _verifyOtp(String verificationId) async {
-    final code = _otpController.text.trim();
+  String get _otpCode => _controllers.map((c) => c.text).join();
 
-    if (code.isEmpty) {
-      _showSnackBar('Please enter the OTP code');
+  void _onChanged(String value, int index) {
+    if (value.length == 1 && index < 5) {
+      _focusNodes[index + 1].requestFocus();
+    } else if (value.isEmpty && index > 0) {
+      _focusNodes[index - 1].requestFocus();
+    }
+    setState(() {});
+  }
+
+  Future<void> _verifyOtp(String verificationId) async {
+    final code = _otpCode;
+
+    if (code.length < 6) {
+      _showSnackBar('Please enter the complete 6-digit code');
       return;
     }
 
@@ -61,13 +76,11 @@ class _OtpScreenState extends State<OtpScreen> {
       );
 
       if (checkResponse.statusCode == 200) {
-        // Existing user — go to home
         if (mounted) {
           _showSnackBar('Welcome back!');
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else if (checkResponse.statusCode == 404) {
-        // New user — create profile in Supabase via backend
         final createResponse = await http.post(
           Uri.parse('$backendUrl/profile'),
           headers: {
@@ -113,66 +126,86 @@ class _OtpScreenState extends State<OtpScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
-        title: const Text(
-          'Verification',
-          style: TextStyle(color: Colors.black),
-        ),
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 40),
+              const Spacer(flex: 2),
+
+              // Title
               const Text(
-                'Enter OTP',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'We sent a verification code to $phone',
-                style:
-                    const TextStyle(fontSize: 14, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 48),
-              const Text(
-                'verification code',
-                style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _otpController,
-                keyboardType: TextInputType.number,
+                "We've sent you a 6-digit\nverification code at",
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 24, letterSpacing: 8),
-                maxLength: 6,
-                decoration: InputDecoration(
-                  counterText: "",
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 16),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _green),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFFBBBBBB),
+                  height: 1.4,
                 ),
               ),
-              const Spacer(),
+
+              const SizedBox(height: 16),
+
+              // Phone number
+              Text(
+                phone,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFFAAAAAA),
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // 6 OTP boxes
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(6, (index) {
+                  return SizedBox(
+                    width: 48,
+                    height: 56,
+                    child: TextField(
+                      controller: _controllers[index],
+                      focusNode: _focusNodes[index],
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      maxLength: 1,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      decoration: InputDecoration(
+                        counterText: '',
+                        contentPadding: EdgeInsets.zero,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: Color(0xFFE0E0E0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: _green, width: 1.5),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      onChanged: (value) => _onChanged(value, index),
+                    ),
+                  );
+                }),
+              ),
+
+              const Spacer(flex: 3),
+
+              // Continue button
               ElevatedButton(
                 onPressed:
                     _isLoading ? null : () => _verifyOtp(verificationId),
@@ -183,6 +216,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
+                  elevation: 0,
                 ),
                 child: _isLoading
                     ? const SizedBox(
@@ -194,14 +228,27 @@ class _OtpScreenState extends State<OtpScreen> {
                         ),
                       )
                     : const Text(
-                        'Verify & Continue',
+                        'Continue',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
               ),
-              const SizedBox(height: 32),
+
+              const SizedBox(height: 16),
+
+              GestureDetector(
+                onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+                child: const Center(
+                  child: Text(
+                    'Already has account?',
+                    style: TextStyle(fontSize: 13, color: Color(0xFFAAAAAA)),
+                  ),
+                ),
+              ),
+
+              const Spacer(flex: 1),
             ],
           ),
         ),
