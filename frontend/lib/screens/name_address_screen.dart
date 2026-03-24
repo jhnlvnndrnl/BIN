@@ -49,10 +49,10 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
 
       // Check result
       if (res == null) {
-        _showSnackBar('Error saving profile');
-      } else {
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        _showSnackBar('Error saving profile');
       }
     } catch (e) {
       if (mounted) _showSnackBar('Unexpected error: $e');
