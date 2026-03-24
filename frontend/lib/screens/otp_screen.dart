@@ -12,8 +12,10 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final List<TextEditingController> _controllers =
-      List.generate(6, (_) => TextEditingController());
+  final List<TextEditingController> _controllers = List.generate(
+    6,
+    (_) => TextEditingController(),
+  );
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
   bool _isLoading = false;
@@ -48,15 +50,23 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // STEP 1: Verify OTP with Firebase
+      print("STEP 1: Creating credential");
+
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId,
         smsCode: code,
       );
 
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
+      print("STEP 2: Signing in with Firebase");
+
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+
+      print("Firebase sign-in success");
+
       final idToken = await userCredential.user?.getIdToken();
+      print("ID Token: $idToken");
 
       if (idToken == null) {
         _showSnackBar('Failed to get authentication token');
@@ -64,16 +74,22 @@ class _OtpScreenState extends State<OtpScreen> {
       }
 
       final backendUrl = dotenv.env['BACKEND_URL'];
+      print("Backend URL: $backendUrl");
+
       if (backendUrl == null) {
         _showSnackBar('Backend URL not configured');
         return;
       }
 
-      // STEP 2: Check if profile already exists
+      print("STEP 3: Checking profile");
+
       final checkResponse = await http.get(
         Uri.parse('$backendUrl/profile'),
         headers: {'Authorization': 'Bearer $idToken'},
       );
+
+      print("Check profile status: ${checkResponse.statusCode}");
+      print("Check profile body: ${checkResponse.body}");
 
       if (checkResponse.statusCode == 200) {
         if (mounted) {
@@ -81,6 +97,8 @@ class _OtpScreenState extends State<OtpScreen> {
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else if (checkResponse.statusCode == 404) {
+        print("STEP 4: Creating profile");
+
         final createResponse = await http.post(
           Uri.parse('$backendUrl/profile'),
           headers: {
@@ -90,6 +108,9 @@ class _OtpScreenState extends State<OtpScreen> {
           body: '{}',
         );
 
+        print("Create profile status: ${createResponse.statusCode}");
+        print("Create profile body: ${createResponse.body}");
+
         if (createResponse.statusCode == 200 ||
             createResponse.statusCode == 201) {
           if (mounted) {
@@ -97,14 +118,19 @@ class _OtpScreenState extends State<OtpScreen> {
             Navigator.pushReplacementNamed(context, '/home');
           }
         } else {
-          _showSnackBar('Failed to create profile: ${createResponse.body}');
+          _showSnackBar('Failed to create profile');
         }
+      } else if (checkResponse.statusCode == 401) {
+        _showSnackBar('Unauthorized - Token verification failed');
       } else {
         _showSnackBar('Server error: ${checkResponse.statusCode}');
       }
     } on FirebaseAuthException catch (e) {
+      print("FIREBASE ERROR CODE: ${e.code}");
+      print("FIREBASE ERROR MESSAGE: ${e.message}");
       _showSnackBar(e.message ?? 'Invalid OTP code');
     } catch (e) {
+      print("GENERAL ERROR: $e");
       _showSnackBar('Something went wrong');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -112,8 +138,9 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -134,7 +161,6 @@ class _OtpScreenState extends State<OtpScreen> {
             children: [
               const Spacer(flex: 2),
 
-              // Title
               const Text(
                 "We've sent you a 6-digit\nverification code at",
                 textAlign: TextAlign.center,
@@ -148,19 +174,14 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 16),
 
-              // Phone number
               Text(
                 phone,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFFAAAAAA),
-                ),
+                style: const TextStyle(fontSize: 14, color: Color(0xFFAAAAAA)),
               ),
 
               const SizedBox(height: 32),
 
-              // 6 OTP boxes
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(6, (index) {
@@ -178,21 +199,22 @@ class _OtpScreenState extends State<OtpScreen> {
                         fontWeight: FontWeight.w500,
                         color: Colors.black87,
                       ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         counterText: '',
                         contentPadding: EdgeInsets.zero,
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFE0E0E0)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE0E0E0),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide:
-                              const BorderSide(color: _green, width: 1.5),
+                          borderSide: const BorderSide(
+                            color: _green,
+                            width: 1.5,
+                          ),
                         ),
                         filled: true,
                         fillColor: Colors.white,
@@ -205,10 +227,8 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const Spacer(flex: 3),
 
-              // Continue button
               ElevatedButton(
-                onPressed:
-                    _isLoading ? null : () => _verifyOtp(verificationId),
+                onPressed: _isLoading ? null : () => _verifyOtp(verificationId),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,

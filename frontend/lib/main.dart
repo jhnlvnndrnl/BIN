@@ -14,9 +14,7 @@ Future<void> main() async {
 
   await dotenv.load(fileName: '.env');
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,

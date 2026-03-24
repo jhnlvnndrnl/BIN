@@ -27,10 +27,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  bool _isPhone(String value) => RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value);
+  // Format Philippine phone number to +63
+  String formatPhone(String phone) {
+    phone = phone.trim();
+    if (phone.startsWith('09')) {
+      return '+63${phone.substring(1)}';
+    }
+    if (phone.startsWith('9')) {
+      return '+63$phone';
+    }
+    if (!phone.startsWith('+63')) {
+      return '+63$phone';
+    }
+    return phone;
+  }
 
   Future<void> _register() async {
-    final phone = _phoneController.text.trim();
+    final phone = formatPhone(_phoneController.text);
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
 
@@ -38,14 +51,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _showSnackBar('Please fill in all fields');
       return;
     }
-    if (!_isPhone(phone)) {
-      _showSnackBar('Enter a valid phone number (e.g. +639123456789)');
-      return;
-    }
+
     if (password != confirm) {
       _showSnackBar('Passwords do not match');
       return;
     }
+
     if (password.length < 6) {
       _showSnackBar('Password must be at least 6 characters');
       return;
@@ -56,40 +67,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
+        timeout: const Duration(seconds: 60),
+
+        // AUTO VERIFY (Android only)
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-verification (Android only)
-          await FirebaseAuth.instance.signInWithCredential(credential);
-          if (mounted) Navigator.pushReplacementNamed(context, '/home');
+          try {
+            await FirebaseAuth.instance.signInWithCredential(credential);
+            if (mounted) {
+              Navigator.pushReplacementNamed(context, '/home');
+            }
+          } catch (e) {
+            print("Auto verification error: $e");
+          }
         },
+
+        // IF OTP FAILS
         verificationFailed: (FirebaseAuthException e) {
+          print("VERIFICATION FAILED CODE: ${e.code}");
+          print("VERIFICATION FAILED MESSAGE: ${e.message}");
+
           _showSnackBar(e.message ?? 'Verification failed');
           setState(() => _isLoading = false);
         },
+
+        // OTP SENT
         codeSent: (String verificationId, int? resendToken) {
+          print("OTP SENT to $phone");
+          print("Verification ID: $verificationId");
+
           setState(() => _isLoading = false);
-          if (mounted) {
-            _showSnackBar('OTP sent to $phone');
-            Navigator.pushNamed(
-              context,
-              '/otp',
-              arguments: {
-                'phone': phone,
-                'verificationId': verificationId,
-                'password': password, // pass password to save in profile later
-              },
-            );
-          }
+
+          Navigator.pushNamed(
+            context,
+            '/otp',
+            arguments: {
+              'verificationId': verificationId,
+              'phone': phone,
+              'password': password,
+            },
+          );
         },
-        codeAutoRetrievalTimeout: (_) {},
+
+        codeAutoRetrievalTimeout: (String verificationId) {
+          print("Auto retrieval timeout");
+        },
       );
     } catch (e) {
-      _showSnackBar('Unexpected error occurred');
+      print("REGISTER ERROR: $e");
+      _showSnackBar('Something went wrong');
       setState(() => _isLoading = false);
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -115,6 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               const Spacer(flex: 2),
+
               const Text(
                 'mobile number',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -125,7 +159,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 keyboardType: TextInputType.phone,
                 decoration: _inputStyle(),
               ),
+
               const SizedBox(height: 16),
+
               const Text(
                 'password',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -148,7 +184,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 16),
+
               const Text(
                 'confirm password',
                 style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
@@ -171,7 +209,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+
               const Spacer(flex: 2),
+
               ElevatedButton(
                 onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(
@@ -200,7 +240,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
               ),
+
               const SizedBox(height: 16),
+
               GestureDetector(
                 onTap: () => Navigator.pushReplacementNamed(context, '/login'),
                 child: const Center(
@@ -210,6 +252,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+
               const Spacer(flex: 1),
             ],
           ),
@@ -220,8 +263,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   InputDecoration _inputStyle() {
     return InputDecoration(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
