@@ -11,38 +11,56 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
   static const _green = Color(0xFF4CAF50);
+  static const _greenDark = Color(0xFF2E7D32);
+  static const _bg = Color(0xFFF4F8F4);
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
+    _fadeController.forward();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
-  // ─── SMS Login ────────────────────────────────────────────────────────────
   Future<void> _loginWithSms() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => _SmsLoginSheet(onLogin: _handleSmsLogin),
     );
   }
 
   Future<void> _handleSmsLogin(String fullPhone) async {
     if (mounted) setState(() => _isLoading = true);
-
     try {
-      // ── Check if account exists ──────────────────────────────────────────
       final List<dynamic> data = await supabase
           .from('profiles')
           .select()
@@ -75,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
             arguments: {
               'phone': fullPhone,
               'verificationId': verificationId,
-              'isLogin': true, // ← tells OTP to go to /home after verify
+              'isLogin': true,
             },
           );
         },
@@ -87,7 +105,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ─── Email Login ──────────────────────────────────────────────────────────
   Future<void> _loginWithEmail() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -98,9 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-
     try {
-      // ── Check if account exists in DB ────────────────────────────────────
       final List<dynamic> data = await supabase
           .from('profiles')
           .select()
@@ -128,16 +143,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ─── Google Login ─────────────────────────────────────────────────────────
   Future<void> _loginWithGoogle() async {
     setState(() => _isLoading = true);
-
     try {
-      // ── Trigger Google Sign-In flow ──────────────────────────────────────
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-
       if (googleUser == null) {
-        // User cancelled the sign-in
         if (mounted) setState(() => _isLoading = false);
         return;
       }
@@ -145,7 +155,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
-      // ── Check if account exists in DB ────────────────────────────────────
       final List<dynamic> data = await supabase
           .from('profiles')
           .select()
@@ -153,20 +162,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (data.isEmpty) {
         _showSnackBar('No account found. Please register first.');
-        await GoogleSignIn().signOut(); // clean up
+        await GoogleSignIn().signOut();
         if (mounted) setState(() => _isLoading = false);
         if (mounted) Navigator.pushReplacementNamed(context, '/register');
         return;
       }
 
-      // ── Sign in with Firebase using Google credential ────────────────────
       final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
-
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'Google login failed');
@@ -179,178 +186,264 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showSnackBar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _bg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight:
-                  MediaQuery.of(context).size.height -
-                  MediaQuery.of(context).padding.top -
-                  MediaQuery.of(context).padding.bottom,
-            ),
-            child: IntrinsicHeight(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(flex: 2),
-
-                  // ── Logo ──────────────────────────────────────────────────
-                  Center(
-                    child: Image.asset(
-                      'assets/images/login.png',
-                      width: 35,
-                      height: 35,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Title ─────────────────────────────────────────────────
-                  const Center(
-                    child: Text(
-                      'Sign in to BIN',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111111),
-                      ),
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  // ── Email Field ───────────────────────────────────────────
-                  _FloatingLabelField(
-                    controller: _emailController,
-                    label: 'email',
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── Password Field ────────────────────────────────────────
-                  _FloatingLabelField(
-                    controller: _passwordController,
-                    label: 'password',
-                    obscureText: _obscurePassword,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        size: 20,
-                        color: const Color(0xFFAAAAAA),
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ── Divider "or" ──────────────────────────────────────────
-                  const Row(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight:
+                      MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top -
+                      MediaQuery.of(context).padding.bottom,
+                ),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(child: Divider(color: Color(0xFFDDDDDD))),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          'or',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFFAAAAAA),
+                      const SizedBox(height: 48),
+
+                      // ── Logo + Title block ──────────────────────────────
+                      Center(
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _green.withOpacity(0.15),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Image.asset(
+                                  'assets/images/login.png',
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Welcome back',
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111111),
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Sign in to continue to BIN',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF888888),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Form Card ───────────────────────────────────────
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _AuthField(
+                              controller: _emailController,
+                              label: 'Email',
+                              hint: 'you@example.com',
+                              icon: Icons.mail_outline_rounded,
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                            const SizedBox(height: 14),
+                            _AuthField(
+                              controller: _passwordController,
+                              label: 'Password',
+                              hint: '••••••••',
+                              icon: Icons.lock_outline_rounded,
+                              obscureText: _obscurePassword,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 18,
+                                  color: const Color(0xFFAAAAAA),
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // ── Login Button ──────────────────────────────
+                            ElevatedButton(
+                              onPressed: _isLoading ? null : _loginWithEmail,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _green,
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: _green.withOpacity(
+                                  0.5,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Sign In',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ── Divider ─────────────────────────────────────────
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              'or continue with',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFAAAAAA),
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // ── Social Buttons Row ──────────────────────────────
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SocialButton(
+                              onTap: _loginWithGoogle,
+                              icon: Image.asset(
+                                'assets/images/google_logo.png',
+                                width: 20,
+                                height: 20,
+                              ),
+                              label: 'Google',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _SocialButton(
+                              onTap: _loginWithSms,
+                              icon: const Icon(
+                                Icons.sim_card_outlined,
+                                size: 20,
+                                color: _green,
+                              ),
+                              label: 'SMS',
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const Spacer(),
+
+                      // ── Create Account ──────────────────────────────────
+                      GestureDetector(
+                        onTap: () => Navigator.pushReplacementNamed(
+                          context,
+                          '/register',
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: RichText(
+                              text: const TextSpan(
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF888888),
+                                ),
+                                children: [
+                                  TextSpan(text: "Don't have an account? "),
+                                  TextSpan(
+                                    text: 'Create one',
+                                    style: TextStyle(
+                                      color: Color(0xFF4CAF50),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                      Expanded(child: Divider(color: Color(0xFFDDDDDD))),
+
+                      const SizedBox(height: 8),
                     ],
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // ── Login with Google ─────────────────────────────────────
-                  _OutlinedAuthButton(
-                    onTap: _loginWithGoogle,
-                    icon: Image.asset(
-                      'assets/images/google_logo.png',
-                      width: 20,
-                      height: 20,
-                    ),
-                    label: 'Login with Google',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // ── Login with SMS ────────────────────────────────────────
-                  _OutlinedAuthButton(
-                    onTap: _loginWithSms,
-                    icon: const Icon(
-                      Icons.sim_card_outlined,
-                      size: 20,
-                      color: _green,
-                    ),
-                    label: 'Login with SMS',
-                  ),
-
-                  const Spacer(flex: 3),
-
-                  // ── Login Button ──────────────────────────────────────────
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _loginWithEmail,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Login',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── Create Account ────────────────────────────────────────
-                  GestureDetector(
-                    onTap: () =>
-                        Navigator.pushReplacementNamed(context, '/register'),
-                    child: const Center(
-                      child: Text(
-                        'Create Account',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFFAAAAAA),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-                ],
+                ),
               ),
             ),
           ),
@@ -360,13 +453,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable floating-label text field
-// ─────────────────────────────────────────────────────────────────────────────
-class _FloatingLabelField extends StatelessWidget {
-  const _FloatingLabelField({
+// ── Reusable auth input field ──────────────────────────────────────────────
+class _AuthField extends StatelessWidget {
+  const _AuthField({
     required this.controller,
     required this.label,
+    required this.hint,
+    required this.icon,
     this.keyboardType,
     this.obscureText = false,
     this.suffixIcon,
@@ -374,45 +467,68 @@ class _FloatingLabelField extends StatelessWidget {
 
   final TextEditingController controller;
   final String label;
+  final String hint;
+  final IconData icon;
   final TextInputType? keyboardType;
   final bool obscureText;
   final Widget? suffixIcon;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      style: const TextStyle(fontSize: 14),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
-        suffixIcon: suffixIcon,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF555555),
+            letterSpacing: 0.3,
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          obscureText: obscureText,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF111111),
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(fontSize: 13, color: Color(0xFFCCCCCC)),
+            prefixIcon: Icon(icon, size: 18, color: const Color(0xFFAAAAAA)),
+            suffixIcon: suffixIcon,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFF4CAF50),
+                width: 1.5,
+              ),
+            ),
+            filled: true,
+            fillColor: const Color(0xFFFAFAFA),
+          ),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF4CAF50)),
-        ),
-        filled: true,
-        fillColor: Colors.white,
-      ),
+      ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable outlined auth button (Google / SMS)
-// ─────────────────────────────────────────────────────────────────────────────
-class _OutlinedAuthButton extends StatelessWidget {
-  const _OutlinedAuthButton({
+// ── Social login button ────────────────────────────────────────────────────
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
     required this.onTap,
     required this.icon,
     required this.label,
@@ -427,20 +543,21 @@ class _OutlinedAuthButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        side: const BorderSide(color: Color(0xFF4CAF50)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        side: const BorderSide(color: Color(0xFFEEEEEE)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        backgroundColor: Colors.white,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           icon,
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(
             label,
             style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF111111),
+              fontSize: 13,
+              color: Color(0xFF333333),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -450,12 +567,9 @@ class _OutlinedAuthButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SMS bottom sheet — same +63 prefix format as register
-// ─────────────────────────────────────────────────────────────────────────────
+// ── SMS bottom sheet ───────────────────────────────────────────────────────
 class _SmsLoginSheet extends StatefulWidget {
   const _SmsLoginSheet({required this.onLogin});
-
   final Future<void> Function(String fullPhone) onLogin;
 
   @override
@@ -465,6 +579,8 @@ class _SmsLoginSheet extends StatefulWidget {
 class _SmsLoginSheetState extends State<_SmsLoginSheet> {
   final _phoneController = TextEditingController();
   bool _loading = false;
+
+  static const _green = Color(0xFF4CAF50);
 
   @override
   void dispose() {
@@ -500,24 +616,43 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       padding: EdgeInsets.only(
         left: 24,
         right: 24,
         top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 28,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEEEEE),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
           const Text(
             'Login with SMS',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 16),
-
-          // ── +63 prefix field (same as register) ──────────────────────────
+          const SizedBox(height: 4),
+          const Text(
+            "We'll send a verification code to your number.",
+            style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
+          ),
+          const SizedBox(height: 20),
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.number,
@@ -525,18 +660,22 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(10),
             ],
-            style: const TextStyle(fontSize: 14),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF111111),
+            ),
             decoration: InputDecoration(
-              labelText: 'mobile number',
-              labelStyle: const TextStyle(
+              hintText: '9XX XXX XXXX',
+              hintStyle: const TextStyle(
                 fontSize: 13,
-                color: Color(0xFF888888),
+                color: Color(0xFFCCCCCC),
               ),
               prefixText: '+63 ',
               prefixStyle: const TextStyle(
                 fontSize: 14,
-                color: Color(0xFF111111),
-                fontWeight: FontWeight.w500,
+                color: Color(0xFF4CAF50),
+                fontWeight: FontWeight.w700,
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -544,26 +683,25 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF4CAF50)),
+                borderSide: const BorderSide(color: _green, width: 1.5),
               ),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: const Color(0xFFFAFAFA),
             ),
           ),
-
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _loading ? null : _submit,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: _green,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 15),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(14),
               ),
               elevation: 0,
             ),
@@ -576,7 +714,10 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
                       strokeWidth: 2,
                     ),
                   )
-                : const Text('Send OTP'),
+                : const Text(
+                    'Send OTP',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  ),
           ),
         ],
       ),
