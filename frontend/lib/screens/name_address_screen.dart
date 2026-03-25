@@ -1,11 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-final supabase = Supabase.instance.client;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
 class NameAddressScreen extends StatefulWidget {
-  final String phone; // from previous OTP flow
-  const NameAddressScreen({super.key, required this.phone});
+  final String? phone;
+  final String? email;
+
+  const NameAddressScreen({super.key, this.phone, this.email});
 
   @override
   State<NameAddressScreen> createState() => _NameAddressScreenState();
@@ -17,6 +19,9 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
   bool _isLoading = false;
 
   static const _green = Color(0xFF4CAF50);
+
+  // 🔧 Replace with your actual backend URL
+  static const _baseUrl = 'https://your-backend-url.com';
 
   @override
   void dispose() {
@@ -30,29 +35,43 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
     final street = _streetController.text.trim();
 
     if (name.isEmpty || street.isEmpty) {
-      _showSnackBar("Please fill in all fields");
+      _showSnackBar('Please fill in all fields');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // Latest supabase_flutter removes .execute()
-      final res = await supabase.from('profiles').upsert({
-        'id': widget.phone,
-        'full_name': name,
-        'phone': widget.phone,
-        'city': 'San Pablo City',
-        'barangay': 'San Francisco',
-        'street': street,
-      }, onConflict: 'id');
+      // Get Firebase ID token (works for both SMS and Google users)
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
 
-      // Check result
-      if (res == null) {
-        if (!mounted) return;
+      if (idToken == null) {
+        _showSnackBar('Not authenticated. Please sign in again.');
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/profile'),
+        headers: {
+          'Authorization': 'Bearer $idToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'full_name': name,
+          'email': widget.email, // null for SMS users
+          'phone': widget.phone, // null for Google users
+          'street': street,
+          'role': 'resident',
+        }),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        _showSnackBar('Error saving profile');
+        final body = jsonDecode(response.body);
+        _showSnackBar(body['detail'] ?? 'Error saving profile');
       }
     } catch (e) {
       if (mounted) _showSnackBar('Unexpected error: $e');
@@ -68,108 +87,149 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  InputDecoration _inputStyle() {
+  InputDecoration _inputStyle({String? hintText, bool enabled = true}) {
     return InputDecoration(
+      hintText: hintText,
+      hintStyle: const TextStyle(color: Color(0xFFAAAAAA)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: _green),
       ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: enabled ? Colors.white : const Color(0xFFF9F9F9),
     );
   }
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text,
+      style: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(flex: 2),
-              const Center(
-                child: Text(
-                  'We\'d love to get to know you better!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 18, color: Color(0xFF888888)),
-                ),
-              ),
-              const Spacer(flex: 2),
-              const Text(
-                'Name',
-                style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 6),
-              TextField(controller: _nameController, decoration: _inputStyle()),
-              const SizedBox(height: 16),
-              const Text(
-                'Province | City',
-                style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                enabled: false,
-                decoration: _inputStyle().copyWith(hintText: 'San Pablo City'),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Barangay',
-                style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                enabled: false,
-                decoration: _inputStyle().copyWith(hintText: 'San Francisco'),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Street',
-                style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _streetController,
-                decoration: _inputStyle(),
-              ),
-              const Spacer(flex: 2),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _submitProfile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight:
+                  MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.top -
+                  MediaQuery.of(context).padding.bottom,
+            ),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(flex: 2),
+
+                  // ── Heading ───────────────────────────────────────────
+                  const Center(
+                    child: Text(
+                      "We'd love to get to know you better!",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 18, color: Color(0xFF888888)),
+                    ),
                   ),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        'Create Account',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
+
+                  const Spacer(flex: 2),
+
+                  // ── Name ─────────────────────────────────────────────
+                  _label('Name'),
+                  TextField(
+                    controller: _nameController,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _inputStyle(),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Province / City (locked) ──────────────────────────
+                  _label('Province | City'),
+                  TextField(
+                    enabled: false,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _inputStyle(
+                      hintText: 'San Pablo City',
+                      enabled: false,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Barangay (locked) ─────────────────────────────────
+                  _label('Barangay'),
+                  TextField(
+                    enabled: false,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _inputStyle(
+                      hintText: 'San Francisco',
+                      enabled: false,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Street ────────────────────────────────────────────
+                  _label('Street'),
+                  TextField(
+                    controller: _streetController,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _inputStyle(),
+                  ),
+
+                  const Spacer(flex: 2),
+
+                  // ── Submit Button ─────────────────────────────────────
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _submitProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
                       ),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Create Account',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                  ),
+
+                  const Spacer(flex: 1),
+                ],
               ),
-              const Spacer(flex: 1),
-            ],
+            ),
           ),
         ),
       ),

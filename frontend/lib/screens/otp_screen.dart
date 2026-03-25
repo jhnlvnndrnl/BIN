@@ -47,11 +47,13 @@ class _OTPScreenState extends State<OTPScreen> {
       await FirebaseAuth.instance.signInWithCredential(credential);
 
       // Navigate to Name & Address screen with phone number
-      if (!mounted) return;
       Navigator.pushReplacementNamed(
         context,
         '/name_address',
-        arguments: {'phone': widget.phone},
+        arguments: {
+          'phone': widget.phone,
+          'email': null, // SMS users have no email at this point
+        },
       );
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'OTP verification failed');

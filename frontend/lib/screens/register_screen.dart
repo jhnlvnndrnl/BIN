@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -102,7 +103,53 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // ── Google Sign Up (UI only — logic to be implemented) ────────────────────
   Future<void> _signUpWithGoogle() async {
-    // TODO: implement Google sign up
+    setState(() => _isLoading = true);
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      final user = userCredential.user;
+
+      if (user == null) {
+        _showSnackBar('Google sign-in failed');
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Navigate directly to /name_address, skipping OTP
+      if (mounted) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/name_address',
+          arguments: {
+            'email': user.email,
+            'phone': null, // Google users may not have phone
+          },
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      _showSnackBar(e.message ?? 'Google sign-in failed');
+    } catch (e) {
+      _showSnackBar('Something went wrong');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _showSnackBar(String message) {

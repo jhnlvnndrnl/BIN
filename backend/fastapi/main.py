@@ -49,6 +49,9 @@ class UserProfile(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    street: Optional[str] = None
+    barangay: Optional[str] = "San Francisco"
+    city: Optional[str] = "San Pablo City"
     role: Optional[str] = "resident"
 
 # -----------------------------
@@ -127,18 +130,23 @@ async def get_profile(user=Depends(get_current_user)):
 @app.post("/profile")
 async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_current_user)):
     uid = user.get("uid")
-    phone = user.get("phone_number")
+    phone = user.get("phone_number")       # Present for SMS auth
+    email = user.get("email")              # Present for Google auth (was missing before!)
+    name = user.get("name")               # Present for Google auth
 
     if not uid:
         raise HTTPException(status_code=400, detail="User UID not found in token")
 
     payload = {
         "id": uid,
-        "full_name": profile.full_name,
-        "phone": phone,
-        "role": profile.role or "resident"
+        "full_name": profile.full_name or name,
+        "email": profile.email or email,
+        "phone": profile.phone or phone,
+        "street": profile.street,
+        "barangay": profile.barangay or "San Francisco",
+        "city": profile.city or "San Pablo City",
+        "role": profile.role or "resident",
     }
-
     data = await supabase_request(
         "post",
         "profiles",
