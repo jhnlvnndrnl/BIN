@@ -53,8 +53,8 @@ class UserProfile(BaseModel):
     barangay: Optional[str] = "San Francisco"
     city: Optional[str] = "San Pablo City"
     role: Optional[str] = "resident"
-    latitude: Optional[float] = None   # GPS coordinates
-    longitude: Optional[float] = None  # GPS coordinates
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 # -----------------------------
 # Firebase Auth Dependency
@@ -93,13 +93,23 @@ async def supabase_request(method: str, path: str, json_data=None, extra_headers
             else:
                 raise ValueError(f"Unsupported method: {method}")
 
-            if response.status_code not in (200, 201, 404):
-                logger.warning("Supabase %s ERROR %d: %s", method, response.status_code, response.text)
+            # 204 = success no content, 409 = valid upsert conflict resolved by Supabase
+            if response.status_code not in (200, 201, 204, 404, 409):
+                logger.warning(
+                    "Supabase %s ERROR %d: %s", method, response.status_code, response.text
+                )
                 response.raise_for_status()
 
+            # 204 and 409 return no body
+            if response.status_code in (204, 409) or not response.text.strip():
+                return {}
+
             return response.json()
+
         except httpx.HTTPStatusError as e:
-            logger.warning("Supabase %s ERROR %d: %s", method, e.response.status_code, e.response.text)
+            logger.warning(
+                "Supabase %s ERROR %d: %s", method, e.response.status_code, e.response.text
+            )
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
         except httpx.RequestError as e:
             logger.error("Supabase %s network failure: %s", method, e)
@@ -132,9 +142,9 @@ async def get_profile(user=Depends(get_current_user)):
 @app.post("/profile")
 async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_current_user)):
     uid = user.get("uid")
-    phone = user.get("phone_number")  # Present for SMS auth
-    email = user.get("email")         # Present for Google auth
-    name = user.get("name")           # Present for Google auth
+    phone = user.get("phone_number")
+    email = user.get("email")
+    name = user.get("name")
 
     if not uid:
         raise HTTPException(status_code=400, detail="User UID not found in token")
@@ -148,14 +158,17 @@ async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_
         "barangay": profile.barangay or "San Francisco",
         "city": profile.city or "San Pablo City",
         "role": profile.role or "resident",
-        "latitude": profile.latitude,   # GPS coordinates
-        "longitude": profile.longitude, # GPS coordinates
+        "latitude": profile.latitude,
+        "longitude": profile.longitude,
     }
-    data = await supabase_request(
+
+    await supabase_request(
         "post",
         "profiles",
         json_data=payload,
-        extra_headers={"Prefer": "resolution=merge-duplicates"}
+        extra_headers={
+            "Prefer": "resolution=merge-duplicates,return=minimal"
+        }
     )
 
     return {"status": "success", "uid": uid}
