@@ -163,7 +163,7 @@ async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_
     }
 
     await supabase_request(
-        "post",
+        "post", 
         "profiles",
         json_data=payload,
         extra_headers={

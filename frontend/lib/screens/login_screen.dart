@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -129,7 +130,51 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ─── Google Login ─────────────────────────────────────────────────────────
   Future<void> _loginWithGoogle() async {
-    // TODO: implement Google login
+    setState(() => _isLoading = true);
+
+    try {
+      // ── Trigger Google Sign-In flow ──────────────────────────────────────
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // ── Check if account exists in DB ────────────────────────────────────
+      final List<dynamic> data = await supabase
+          .from('profiles')
+          .select()
+          .eq('email', googleUser.email);
+
+      if (data.isEmpty) {
+        _showSnackBar('No account found. Please register first.');
+        await GoogleSignIn().signOut(); // clean up
+        if (mounted) setState(() => _isLoading = false);
+        if (mounted) Navigator.pushReplacementNamed(context, '/register');
+        return;
+      }
+
+      // ── Sign in with Firebase using Google credential ────────────────────
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (mounted) Navigator.pushReplacementNamed(context, '/home');
+    } on FirebaseAuthException catch (e) {
+      _showSnackBar(e.message ?? 'Google login failed');
+    } catch (e) {
+      _showSnackBar('Unexpected error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _showSnackBar(String message) {
