@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../main.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -33,7 +34,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String get _fullPhone => '+63${_phoneController.text.trim()}';
 
   bool _isValidPhone(String digits) {
-    // After +63, PH numbers are 10 digits starting with 9
     final clean = digits.trim();
     return RegExp(r'^9\d{9}$').hasMatch(clean);
   }
@@ -66,6 +66,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // ── Check if phone already registered ────────────────────────────────
+      final List<dynamic> existing = await supabase
+          .from('profiles')
+          .select()
+          .eq('phone', _fullPhone);
+
+      if (existing.isNotEmpty) {
+        _showSnackBar('Account already exists. Please login instead.');
+        if (mounted) setState(() => _isLoading = false);
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: _fullPhone,
         timeout: const Duration(seconds: 60),
@@ -96,19 +109,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         codeAutoRetrievalTimeout: (_) {},
       );
     } catch (e) {
-      _showSnackBar('Something went wrong');
+      _showSnackBar('Something went wrong: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ── Google Sign Up (UI only — logic to be implemented) ────────────────────
+  // ── Google Sign Up ────────────────────────────────────────────────────────
   Future<void> _signUpWithGoogle() async {
     setState(() => _isLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
       if (googleUser == null) {
-        // User cancelled the sign-in
         setState(() => _isLoading = false);
         return;
       }
@@ -132,21 +144,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
-      // Navigate directly to /name_address, skipping OTP
+      // ── Check if Google email already registered ──────────────────────────
+      final List<dynamic> existing = await supabase
+          .from('profiles')
+          .select()
+          .eq('email', user.email ?? '');
+
+      if (existing.isNotEmpty) {
+        // Sign out from Firebase since we're not logging in here
+        await FirebaseAuth.instance.signOut();
+        _showSnackBar('Account already exists. Please login instead.');
+        if (mounted) setState(() => _isLoading = false);
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      // New Google user — proceed to name/address screen
       if (mounted) {
         Navigator.pushReplacementNamed(
           context,
           '/name_address',
-          arguments: {
-            'email': user.email,
-            'phone': null, // Google users may not have phone
-          },
+          arguments: {'email': user.email, 'phone': null},
         );
       }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'Google sign-in failed');
     } catch (e) {
-      _showSnackBar('Something went wrong');
+      _showSnackBar('Something went wrong: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -210,7 +234,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     keyboardType: TextInputType.number,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10), // 9XXXXXXXXX
+                      LengthLimitingTextInputFormatter(10),
                     ],
                     style: const TextStyle(fontSize: 14),
                     decoration: InputDecoration(

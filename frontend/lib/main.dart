@@ -53,6 +53,7 @@ class MyApp extends StatelessWidget {
               builder: (_) => OTPScreen(
                 phone: args['phone'],
                 verificationId: args['verificationId'],
+                isLogin: args['isLogin'] ?? false,
               ),
             );
           case '/name_address':

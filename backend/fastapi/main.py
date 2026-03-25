@@ -53,6 +53,8 @@ class UserProfile(BaseModel):
     barangay: Optional[str] = "San Francisco"
     city: Optional[str] = "San Pablo City"
     role: Optional[str] = "resident"
+    latitude: Optional[float] = None   # GPS coordinates
+    longitude: Optional[float] = None  # GPS coordinates
 
 # -----------------------------
 # Firebase Auth Dependency
@@ -130,9 +132,9 @@ async def get_profile(user=Depends(get_current_user)):
 @app.post("/profile")
 async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_current_user)):
     uid = user.get("uid")
-    phone = user.get("phone_number")       # Present for SMS auth
-    email = user.get("email")              # Present for Google auth (was missing before!)
-    name = user.get("name")               # Present for Google auth
+    phone = user.get("phone_number")  # Present for SMS auth
+    email = user.get("email")         # Present for Google auth
+    name = user.get("name")           # Present for Google auth
 
     if not uid:
         raise HTTPException(status_code=400, detail="User UID not found in token")
@@ -146,6 +148,8 @@ async def upsert_profile(profile: UserProfile = UserProfile(), user=Depends(get_
         "barangay": profile.barangay or "San Francisco",
         "city": profile.city or "San Pablo City",
         "role": profile.role or "resident",
+        "latitude": profile.latitude,   # GPS coordinates
+        "longitude": profile.longitude, # GPS coordinates
     }
     data = await supabase_request(
         "post",

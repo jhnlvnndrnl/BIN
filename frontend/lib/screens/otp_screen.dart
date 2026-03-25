@@ -6,11 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 class OTPScreen extends StatefulWidget {
   final String phone;
   final String verificationId;
+  final bool isLogin; // ← true = existing user, go to /home
+  //   false = new user, go to /name_address
 
   const OTPScreen({
     super.key,
     required this.phone,
     required this.verificationId,
+    this.isLogin = false,
   });
 
   @override
@@ -18,7 +21,6 @@ class OTPScreen extends StatefulWidget {
 }
 
 class _OTPScreenState extends State<OTPScreen> {
-  // 6 controllers + focus nodes for each box
   final List<TextEditingController> _controllers = List.generate(
     6,
     (_) => TextEditingController(),
@@ -63,7 +65,6 @@ class _OTPScreenState extends State<OTPScreen> {
   }
 
   String get _maskedPhone {
-    // Show +63xxxxxxxxxx with last 4 digits visible
     if (widget.phone.length >= 4) {
       final visible = widget.phone.substring(widget.phone.length - 4);
       final masked = widget.phone.substring(0, widget.phone.length - 4);
@@ -91,14 +92,20 @@ class _OTPScreenState extends State<OTPScreen> {
       await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (!mounted) return;
-      Navigator.pushReplacementNamed(
-        context,
-        '/name_address',
-        arguments: {'phone': widget.phone, 'email': null},
-      );
+
+      if (widget.isLogin) {
+        // ── Existing user — go straight to home ───────────────────────────
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        // ── New user — go to name/address to complete profile ─────────────
+        Navigator.pushReplacementNamed(
+          context,
+          '/name_address',
+          arguments: {'phone': widget.phone, 'email': null},
+        );
+      }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'OTP verification failed');
-      // Clear boxes on failure
       for (final c in _controllers) c.clear();
       _focusNodes[0].requestFocus();
     } finally {
@@ -117,7 +124,12 @@ class _OTPScreenState extends State<OTPScreen> {
         timeout: const Duration(seconds: 60),
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
-          if (mounted) Navigator.pushReplacementNamed(context, '/home');
+          if (mounted) {
+            Navigator.pushReplacementNamed(
+              context,
+              widget.isLogin ? '/home' : '/name_address',
+            );
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           _showSnackBar(e.message ?? 'Failed to resend code');
@@ -142,7 +154,6 @@ class _OTPScreenState extends State<OTPScreen> {
     if (value.length == 1 && index < 5) {
       _focusNodes[index + 1].requestFocus();
     }
-    // Auto-submit when all 6 filled
     if (_otp.length == 6) {
       FocusScope.of(context).unfocus();
     }
@@ -177,7 +188,6 @@ class _OTPScreenState extends State<OTPScreen> {
             children: [
               const Spacer(flex: 3),
 
-              // ── Title ──────────────────────────────────────────────────
               const Text(
                 'Verify your number',
                 textAlign: TextAlign.center,
@@ -191,7 +201,6 @@ class _OTPScreenState extends State<OTPScreen> {
 
               const SizedBox(height: 12),
 
-              // ── Subtitle ───────────────────────────────────────────────
               Text(
                 'We sent a 6 digit code to\n$_maskedPhone',
                 textAlign: TextAlign.center,
@@ -200,7 +209,6 @@ class _OTPScreenState extends State<OTPScreen> {
 
               const Spacer(flex: 2),
 
-              // ── OTP Boxes ──────────────────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(6, (i) => _buildOTPBox(i)),
@@ -208,7 +216,6 @@ class _OTPScreenState extends State<OTPScreen> {
 
               const SizedBox(height: 28),
 
-              // ── Resend countdown ───────────────────────────────────────
               GestureDetector(
                 onTap: _resendSeconds == 0 ? _resendCode : null,
                 child: Center(
@@ -233,7 +240,6 @@ class _OTPScreenState extends State<OTPScreen> {
 
               const Spacer(flex: 3),
 
-              // ── Continue Button ────────────────────────────────────────
               ElevatedButton(
                 onPressed: (_isLoading || _otp.length != 6) ? null : _verifyOTP,
                 style: ElevatedButton.styleFrom(
@@ -266,7 +272,6 @@ class _OTPScreenState extends State<OTPScreen> {
 
               const SizedBox(height: 16),
 
-              // ── Edit phone ─────────────────────────────────────────────
               GestureDetector(
                 onTap: () => Navigator.pop(context),
                 child: const Center(

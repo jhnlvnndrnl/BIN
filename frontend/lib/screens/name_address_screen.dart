@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 
 class NameAddressScreen extends StatefulWidget {
@@ -15,34 +18,103 @@ class NameAddressScreen extends StatefulWidget {
 
 class _NameAddressScreenState extends State<NameAddressScreen> {
   final _nameController = TextEditingController();
-  final _streetController = TextEditingController();
+
+  bool _termsAccepted = false;
+  bool _isLocating = false;
   bool _isLoading = false;
+
+  // ── Location data ──────────────────────────────────────────────────────────
+  double? _latitude;
+  double? _longitude;
+  String? _street;
+  String? _barangay;
+  String? _locationDisplay; // shown to user after GPS fetch
 
   static const _green = Color(0xFF4CAF50);
 
-  // 🔧 Replace with your actual backend URL
-  static const _baseUrl = 'https://your-backend-url.com';
+  static String get _baseUrl =>
+      dotenv.env['BACKEND_URL'] ?? 'http://localhost:8000';
 
   @override
   void dispose() {
     _nameController.dispose();
-    _streetController.dispose();
     super.dispose();
   }
 
+  // ── Request GPS and reverse geocode ───────────────────────────────────────
+  Future<void> _fetchLocation() async {
+    setState(() => _isLocating = true);
+
+    try {
+      // Check & request permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _showSnackBar(
+          'Location permission permanently denied. Please enable it in settings.',
+        );
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        _showSnackBar('Location permission denied.');
+        return;
+      }
+
+      // Get current position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      _latitude = position.latitude;
+      _longitude = position.longitude;
+
+      // Reverse geocode
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        _street = place.street ?? '';
+        // subLocality is typically the barangay in PH
+        _barangay = place.subLocality ?? place.locality ?? 'San Francisco';
+        _locationDisplay =
+            '${_street ?? ''}, ${_barangay ?? ''}, San Pablo City';
+      } else {
+        _locationDisplay = 'Location fetched (no address found)';
+      }
+
+      setState(() {});
+    } catch (e) {
+      _showSnackBar('Could not get location: $e');
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  // ── Submit profile ─────────────────────────────────────────────────────────
   Future<void> _submitProfile() async {
     final name = _nameController.text.trim();
-    final street = _streetController.text.trim();
 
-    if (name.isEmpty || street.isEmpty) {
-      _showSnackBar('Please fill in all fields');
+    if (name.isEmpty) {
+      _showSnackBar('Please enter your name');
+      return;
+    }
+    if (!_termsAccepted) {
+      _showSnackBar('Please accept the terms and conditions');
+      return;
+    }
+    if (_latitude == null || _longitude == null) {
+      _showSnackBar('Please allow location access first');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // Get Firebase ID token (works for both SMS and Google users)
       final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
 
       if (idToken == null) {
@@ -58,23 +130,31 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
         },
         body: jsonEncode({
           'full_name': name,
-          'email': widget.email, // null for SMS users
-          'phone': widget.phone, // null for Google users
-          'street': street,
+          'email': widget.email,
+          'phone': widget.phone,
+          'street': _street ?? '',
+          'barangay': _barangay ?? 'San Francisco',
+          'city': 'San Pablo City',
+          'latitude': _latitude,
+          'longitude': _longitude,
           'role': 'resident',
         }),
       );
 
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        final body = jsonDecode(response.body);
-        _showSnackBar(body['detail'] ?? 'Error saving profile');
+        String errorMessage = 'Error saving profile (${response.statusCode})';
+        try {
+          final body = jsonDecode(response.body);
+          errorMessage = body['detail'] ?? errorMessage;
+        } catch (_) {}
+        _showSnackBar(errorMessage);
       }
     } catch (e) {
-      if (mounted) _showSnackBar('Unexpected error: $e');
+      if (mounted) _showSnackBar('Network error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -87,25 +167,56 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  InputDecoration _inputStyle({String? hintText, bool enabled = true}) {
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Terms & Conditions',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'By using BIN, you agree to allow the app to collect your name, '
+            'contact information, and GPS location solely for the purpose of '
+            'waste collection services in San Pablo City. Your data will not '
+            'be shared with third parties without your consent.\n\n'
+            'Location data is used to identify your household for accurate '
+            'waste collection scheduling and routing.',
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF555555),
+              height: 1.5,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: Color(0xFF4CAF50)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _editableStyle() {
     return InputDecoration(
-      hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFFAAAAAA)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
       ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
-      ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _green),
+        borderSide: const BorderSide(color: _green, width: 1.5),
       ),
       filled: true,
-      fillColor: enabled ? Colors.white : const Color(0xFFF9F9F9),
+      fillColor: Colors.white,
     );
   }
 
@@ -119,6 +230,8 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final locationFetched = _latitude != null;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -137,66 +250,136 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
                 children: [
                   const Spacer(flex: 2),
 
-                  // ── Heading ───────────────────────────────────────────
+                  // ── Title ──────────────────────────────────────────────
                   const Center(
                     child: Text(
-                      "We'd love to get to know you better!",
+                      'Enter your personal\ninformation',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, color: Color(0xFF888888)),
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111111),
+                        height: 1.25,
+                      ),
                     ),
                   ),
 
                   const Spacer(flex: 2),
 
-                  // ── Name ─────────────────────────────────────────────
+                  // ── Name ───────────────────────────────────────────────
                   _label('Name'),
                   TextField(
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
                     style: const TextStyle(fontSize: 14),
-                    decoration: _inputStyle(),
+                    decoration: _editableStyle(),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
-                  // ── Province / City (locked) ──────────────────────────
-                  _label('Province | City'),
-                  TextField(
-                    enabled: false,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: _inputStyle(
-                      hintText: 'San Pablo City',
-                      enabled: false,
+                  // ── Location Button ────────────────────────────────────
+                  OutlinedButton.icon(
+                    onPressed: _isLocating ? null : _fetchLocation,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(
+                        color: locationFetched
+                            ? _green
+                            : const Color(0xFFDDDDDD),
+                        width: locationFetched ? 1.5 : 1.0,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: _isLocating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _green,
+                            ),
+                          )
+                        : Icon(
+                            locationFetched
+                                ? Icons.location_on
+                                : Icons.location_on_outlined,
+                            color: locationFetched
+                                ? _green
+                                : const Color(0xFFAAAAAA),
+                            size: 20,
+                          ),
+                    label: Text(
+                      _isLocating
+                          ? 'Getting location...'
+                          : locationFetched
+                          ? _locationDisplay ?? 'Location fetched'
+                          : 'Allow location access',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: locationFetched
+                            ? const Color(0xFF111111)
+                            : const Color(0xFFAAAAAA),
+                        fontWeight: locationFetched
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
 
-                  // ── Barangay (locked) ─────────────────────────────────
-                  _label('Barangay'),
-                  TextField(
-                    enabled: false,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: _inputStyle(
-                      hintText: 'San Francisco',
-                      enabled: false,
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── Street ────────────────────────────────────────────
-                  _label('Street'),
-                  TextField(
-                    controller: _streetController,
-                    textCapitalization: TextCapitalization.words,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: _inputStyle(),
+                  // ── Terms & Conditions Checkbox ────────────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Checkbox(
+                          value: _termsAccepted,
+                          onChanged: (val) =>
+                              setState(() => _termsAccepted = val ?? false),
+                          activeColor: _green,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          side: const BorderSide(color: Color(0xFFDDDDDD)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _showTermsDialog,
+                          child: RichText(
+                            text: const TextSpan(
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF888888),
+                              ),
+                              children: [
+                                TextSpan(text: 'I agree to the '),
+                                TextSpan(
+                                  text: 'Terms and Conditions',
+                                  style: TextStyle(
+                                    color: Color(0xFF4CAF50),
+                                    fontWeight: FontWeight.w500,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
 
                   const Spacer(flex: 2),
 
-                  // ── Submit Button ─────────────────────────────────────
+                  // ── Create Account Button ──────────────────────────────
                   ElevatedButton(
                     onPressed: _isLoading ? null : _submitProfile,
                     style: ElevatedButton.styleFrom(
@@ -226,7 +409,23 @@ class _NameAddressScreenState extends State<NameAddressScreen> {
                           ),
                   ),
 
-                  const Spacer(flex: 1),
+                  const SizedBox(height: 16),
+
+                  // ── Edit mobile number ─────────────────────────────────
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Center(
+                      child: Text(
+                        'edit mobile number',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFFAAAAAA),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
                 ],
               ),
             ),

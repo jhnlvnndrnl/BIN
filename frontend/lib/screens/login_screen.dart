@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
 
@@ -12,7 +13,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _phoneController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -22,46 +22,40 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
-  bool _isPhone(String value) => RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value);
-
-  // ─── SMS Login (existing logic) ───────────────────────────────────────────
+  // ─── SMS Login ────────────────────────────────────────────────────────────
   Future<void> _loginWithSms() async {
-    // Show a bottom sheet to collect phone number
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => _SmsLoginSheet(
-        phoneController: _phoneController,
-        isPhone: _isPhone,
-        onLogin: _handleSmsLogin,
-      ),
+      builder: (context) => _SmsLoginSheet(onLogin: _handleSmsLogin),
     );
   }
 
-  Future<void> _handleSmsLogin(String phone) async {
+  Future<void> _handleSmsLogin(String fullPhone) async {
     if (mounted) setState(() => _isLoading = true);
 
     try {
+      // ── Check if account exists ──────────────────────────────────────────
       final List<dynamic> data = await supabase
           .from('profiles')
           .select()
-          .eq('phone', phone);
+          .eq('phone', fullPhone);
 
       if (data.isEmpty) {
-        _showSnackBar('Account does not exist');
+        _showSnackBar('No account found. Please register first.');
         if (mounted) setState(() => _isLoading = false);
+        if (mounted) Navigator.pushReplacementNamed(context, '/register');
         return;
       }
 
       await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
+        phoneNumber: fullPhone,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
           if (!mounted) return;
@@ -77,7 +71,11 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushNamed(
             context,
             '/otp',
-            arguments: {'phone': phone, 'verificationId': verificationId},
+            arguments: {
+              'phone': fullPhone,
+              'verificationId': verificationId,
+              'isLogin': true, // ← tells OTP to go to /home after verify
+            },
           );
         },
         codeAutoRetrievalTimeout: (_) {},
@@ -88,12 +86,48 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ─── Email Login (UI only — logic to be implemented) ──────────────────────
+  // ─── Email Login ──────────────────────────────────────────────────────────
   Future<void> _loginWithEmail() async {
-    // TODO: implement email login
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showSnackBar('Please fill in all fields');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // ── Check if account exists in DB ────────────────────────────────────
+      final List<dynamic> data = await supabase
+          .from('profiles')
+          .select()
+          .eq('email', email);
+
+      if (data.isEmpty) {
+        _showSnackBar('No account found. Please register first.');
+        if (mounted) setState(() => _isLoading = false);
+        if (mounted) Navigator.pushReplacementNamed(context, '/register');
+        return;
+      }
+
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (mounted) Navigator.pushReplacementNamed(context, '/home');
+    } on FirebaseAuthException catch (e) {
+      _showSnackBar(e.message ?? 'Login failed');
+    } catch (e) {
+      _showSnackBar('Unexpected error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  // ─── Google Login (UI only — logic to be implemented) ─────────────────────
+  // ─── Google Login ─────────────────────────────────────────────────────────
   Future<void> _loginWithGoogle() async {
     // TODO: implement Google login
   }
@@ -372,25 +406,29 @@ class _OutlinedAuthButton extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SMS bottom sheet
+// SMS bottom sheet — same +63 prefix format as register
 // ─────────────────────────────────────────────────────────────────────────────
 class _SmsLoginSheet extends StatefulWidget {
-  const _SmsLoginSheet({
-    required this.phoneController,
-    required this.isPhone,
-    required this.onLogin,
-  });
+  const _SmsLoginSheet({required this.onLogin});
 
-  final TextEditingController phoneController;
-  final bool Function(String) isPhone;
-  final Future<void> Function(String) onLogin;
+  final Future<void> Function(String fullPhone) onLogin;
 
   @override
   State<_SmsLoginSheet> createState() => _SmsLoginSheetState();
 }
 
 class _SmsLoginSheetState extends State<_SmsLoginSheet> {
+  final _phoneController = TextEditingController();
   bool _loading = false;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  bool _isValidPhone(String digits) =>
+      RegExp(r'^9\d{9}$').hasMatch(digits.trim());
 
   void _showSnackBar(String msg) {
     if (!mounted) return;
@@ -398,17 +436,17 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
   }
 
   Future<void> _submit() async {
-    final phone = widget.phoneController.text.trim();
-    if (phone.isEmpty) {
-      _showSnackBar('Please enter your phone number');
+    final digits = _phoneController.text.trim();
+    if (digits.isEmpty) {
+      _showSnackBar('Please enter your mobile number');
       return;
     }
-    if (!widget.isPhone(phone)) {
-      _showSnackBar('Enter a valid phone number (e.g. +639123456789)');
+    if (!_isValidPhone(digits)) {
+      _showSnackBar('Enter a valid PH number (e.g. 9123456789)');
       return;
     }
     setState(() => _loading = true);
-    await widget.onLogin(phone);
+    await widget.onLogin('+63$digits');
     if (mounted) {
       setState(() => _loading = false);
       Navigator.pop(context);
@@ -433,11 +471,45 @@ class _SmsLoginSheetState extends State<_SmsLoginSheet> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
-          _FloatingLabelField(
-            controller: widget.phoneController,
-            label: 'mobile number',
-            keyboardType: TextInputType.phone,
+
+          // ── +63 prefix field (same as register) ──────────────────────────
+          TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ],
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'mobile number',
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF888888),
+              ),
+              prefixText: '+63 ',
+              prefixStyle: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF111111),
+                fontWeight: FontWeight.w500,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF4CAF50)),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+            ),
           ),
+
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _loading ? null : _submit,
