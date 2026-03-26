@@ -26,6 +26,13 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<!-- Location permission descriptions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BIN needs your location to identify your household for waste collection services in San Pablo City.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>BIN needs your location to identify your household for waste collection services in San Pablo City.</string>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
