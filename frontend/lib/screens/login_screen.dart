@@ -13,7 +13,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -43,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     _fadeController.dispose();
     super.dispose();
@@ -106,10 +106,10 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _loginWithEmail() async {
-    final email = _emailController.text.trim();
+    final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
+    if (username.isEmpty || password.isEmpty) {
       _showSnackBar('Please fill in all fields');
       return;
     }
@@ -119,7 +119,8 @@ class _LoginScreenState extends State<LoginScreen>
       final List<dynamic> data = await supabase
           .from('profiles')
           .select()
-          .eq('email', email);
+          .eq('full_name', username)
+          .limit(1);
 
       if (data.isEmpty) {
         _showSnackBar('No account found. Please register first.');
@@ -127,6 +128,8 @@ class _LoginScreenState extends State<LoginScreen>
         if (mounted) Navigator.pushReplacementNamed(context, '/register');
         return;
       }
+
+      final String email = data[0]['email'] as String;
 
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
@@ -289,11 +292,11 @@ class _LoginScreenState extends State<LoginScreen>
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _AuthField(
-                              controller: _emailController,
-                              label: 'Email',
-                              hint: 'you@example.com',
-                              icon: Icons.mail_outline_rounded,
-                              keyboardType: TextInputType.emailAddress,
+                              controller: _usernameController,
+                              label: 'Username',
+                              hint: 'your_username',
+                              icon: Icons.person_outline_rounded,
+                              keyboardType: TextInputType.text,
                             ),
                             const SizedBox(height: 14),
                             _AuthField(
