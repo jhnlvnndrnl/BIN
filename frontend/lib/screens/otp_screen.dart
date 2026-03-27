@@ -60,8 +60,12 @@ class _OTPScreenState extends State<OTPScreen>
   @override
   void dispose() {
     _timer?.cancel();
-    for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    for (final f in _focusNodes) {
+      f.dispose();
+    }
     _fadeController.dispose();
     super.dispose();
   }
@@ -113,7 +117,9 @@ class _OTPScreenState extends State<OTPScreen>
       }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'OTP verification failed');
-      for (final c in _controllers) c.clear();
+      for (final c in _controllers) {
+        c.clear();
+      }
       _focusNodes[0].requestFocus();
     } finally {
       if (mounted) setState(() => _isLoading = false);

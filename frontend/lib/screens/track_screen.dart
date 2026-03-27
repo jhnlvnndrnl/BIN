@@ -91,7 +91,7 @@ class _TrackScreenState extends State<TrackScreen> {
                           child: ListView.separated(
                             padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
                             itemCount: _filtered.length,
-                            separatorBuilder: (_, __) =>
+                            separatorBuilder: (_, _) =>
                                 const SizedBox(height: 10),
                             itemBuilder: (_, i) =>
                                 _ReportCard(report: _filtered[i], index: i),
@@ -319,7 +319,7 @@ class _ReportCard extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: report.imageLink!,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
+                        placeholder: (_, _) => Container(
                           color: AppTheme.bgOverlay,
                           child: const Center(
                             child: SizedBox(
@@ -332,7 +332,7 @@ class _ReportCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        errorWidget: (_, __, ___) => Container(
+                        errorWidget: (_, _, _) => Container(
                           color: AppTheme.bgOverlay,
                           child: const Icon(
                             Icons.broken_image_rounded,

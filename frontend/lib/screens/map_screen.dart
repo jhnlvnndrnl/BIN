@@ -438,7 +438,7 @@ class _ReportPopup extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: report.imageLink!,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
+                placeholder: (_, _) => Container(
                   color: Colors.white.withOpacity(0.05),
                   child: const Center(
                     child: CircularProgressIndicator(
@@ -447,7 +447,7 @@ class _ReportPopup extends StatelessWidget {
                     ),
                   ),
                 ),
-                errorWidget: (_, __, ___) => Container(
+                errorWidget: (_, _, _) => Container(
                   color: Colors.white.withOpacity(0.05),
                   child: const Icon(
                     Icons.broken_image_rounded,

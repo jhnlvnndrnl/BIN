@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -58,6 +60,60 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // Call this function exactly after the citizen successfully logs into the app!
+  Future<void> registerDeviceToken() async {
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        print("❌ Notification permission denied");
+        return;
+      }
+
+      // Retry up to 3 times if token is null
+      String? fcmToken;
+      for (int i = 0; i < 3; i++) {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) break;
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      if (fcmToken == null) {
+        print("❌ FCM token is NULL after retries");
+        return;
+      }
+
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) {
+        print("❌ Firebase user is NULL");
+        return;
+      }
+
+      print("📲 FCM Token: $fcmToken");
+
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .update({'fcm_token': fcmToken})
+          .eq('id', firebaseUser.uid)
+          .select();
+
+      if (response.isEmpty) {
+        print(
+          "⚠️ No row updated — UID may not match profiles.id: ${firebaseUser.uid}",
+        );
+      } else {
+        print("✅ FCM saved: $response");
+      }
+    } catch (e) {
+      print("❌ registerDeviceToken error: $e");
+    }
+  }
+
   Future<void> _handleSmsLogin(String fullPhone) async {
     if (mounted) setState(() => _isLoading = true);
     try {
@@ -77,6 +133,7 @@ class _LoginScreenState extends State<LoginScreen>
         phoneNumber: fullPhone,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
+          await registerDeviceToken();
           if (!mounted) return;
           Navigator.pushReplacementNamed(context, '/home');
         },
@@ -135,6 +192,7 @@ class _LoginScreenState extends State<LoginScreen>
         email: email,
         password: password,
       );
+      await registerDeviceToken();
 
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
@@ -177,6 +235,7 @@ class _LoginScreenState extends State<LoginScreen>
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
+      await registerDeviceToken();
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'Google login failed');

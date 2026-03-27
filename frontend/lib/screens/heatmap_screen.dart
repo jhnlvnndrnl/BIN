@@ -549,7 +549,7 @@ class _ReportDetailSheet extends StatelessWidget {
                   height: 140,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     height: 140,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F6FA),

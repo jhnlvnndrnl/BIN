@@ -32,6 +32,7 @@ dependencies:
   shimmer: ^3.0.0
   uuid: ^4.3.3
   intl: ^0.19.0
+  firebase_messaging: ^15.2.10
  
 dev_dependencies:
   flutter_test:

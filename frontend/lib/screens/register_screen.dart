@@ -527,8 +527,8 @@ class _AuthField extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.icon,
-    this.keyboardType,
     this.obscureText = false,
+    this.keyboardType = TextInputType.text,
     this.suffixIcon,
   });
 
