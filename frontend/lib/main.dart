@@ -18,16 +18,11 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/otp_screen.dart';
 import 'screens/name_address_screen.dart';
-import 'screens/heatmap_screen.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+// import 'screens/heatmap_screen.dart'; // Uncomment if needed
 import 'services/notification_service.dart';
 
 // ── Global Supabase client shorthand
 final supabase = Supabase.instance.client;
-
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Background message: ${message.notification?.title}');
-}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,35 +36,22 @@ Future<void> main() async {
   );
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  // ── Load .env
+  // ── 1. Load .env
   await dotenv.load(fileName: '.env');
 
-  // ── Firebase
+  // ── 2. Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // ── Set up background message handler BEFORE initializing notifications
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  // ── Initialize notifications (this requests permissions)
-  await NotificationService.initialize();
-
-  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    await supabase
-        .from('profiles')
-        .update({'fcm_token': newToken})
-        .eq('id', uid);
-    print("🔄 FCM token rotated and updated: $newToken");
-  });
-
-  // ── Supabase
+  // ── 3. Initialize Supabase (Must happen before notifications try to sync tokens)
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
-  // ── Mapbox
+  // ── 4. Initialize Notifications
+  await NotificationService.initialize();
+
+  // ── 5. Mapbox
   MapboxOptions.setAccessToken(dotenv.env['MAPBOX_TOKEN']!);
 
   runApp(const BinApp());
@@ -80,7 +62,6 @@ class BinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    NotificationService.setContext(context);
     return MaterialApp(
       title: 'BIN',
       debugShowCheckedModeBanner: false,
@@ -104,7 +85,11 @@ class BinApp extends StatelessWidget {
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
+                    body: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF4CAF50),
+                      ),
+                    ),
                   );
                 }
                 if (snap.data == true) {
@@ -123,13 +108,10 @@ class BinApp extends StatelessWidget {
       // ── Named routes with transitions
       onGenerateRoute: (settings) {
         switch (settings.name) {
-          // Auth screens
           case '/login':
             return MaterialPageRoute(builder: (_) => const LoginScreen());
-
           case '/register':
             return MaterialPageRoute(builder: (_) => const RegisterScreen());
-
           case '/otp':
             final args = settings.arguments as Map<String, dynamic>;
             return MaterialPageRoute(
@@ -139,26 +121,19 @@ class BinApp extends StatelessWidget {
                 isLogin: args['isLogin'] ?? false,
               ),
             );
-
           case '/name_address':
             final args = settings.arguments as Map<String, dynamic>;
             return MaterialPageRoute(
               builder: (_) => NameAddressScreen(phone: args['phone']),
             );
-
-          // BIN screens
           case '/home':
             return _slideUp(const HomeScreen());
-
           case '/camera':
             return _slideUp(const CameraScreen());
-
           case '/map':
             return _fade(const MapScreen());
-
           case '/track':
             return _slideRight(const TrackScreen());
-
           default:
             return MaterialPageRoute(builder: (_) => const HomeScreen());
         }
@@ -181,55 +156,13 @@ class BinApp extends StatelessWidget {
           .maybeSingle();
 
       if (data != null) {
-        // ✅ Always refresh FCM token on app start
-        await _refreshFcmToken(user.uid);
+        // ✅ User is validated. Sync their FCM token to Supabase immediately.
+        await NotificationService.syncFCMToken();
         return true;
       }
       return false;
     } catch (e) {
       return false;
-    }
-  }
-
-  Future<void> _refreshFcmToken(String uid) async {
-    try {
-      final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
-          settings.authorizationStatus != AuthorizationStatus.provisional) {
-        print("❌ Notification permission denied");
-        return;
-      }
-
-      String? fcmToken;
-      for (int i = 0; i < 3; i++) {
-        fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) break;
-        await Future.delayed(const Duration(seconds: 1));
-      }
-
-      if (fcmToken == null) {
-        print("❌ FCM token null after retries");
-        return;
-      }
-
-      final response = await supabase
-          .from('profiles')
-          .update({'fcm_token': fcmToken})
-          .eq('id', uid)
-          .select();
-
-      if (response.isEmpty) {
-        print("⚠️ FCM update — no row matched for UID: $uid");
-      } else {
-        print("✅ FCM token refreshed on app start: $fcmToken");
-      }
-    } catch (e) {
-      print("❌ _refreshFcmToken error: $e");
     }
   }
 
