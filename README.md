@@ -244,53 +244,18 @@ bin/
 
 ---
 
-## 15. Why Spec-Driven Development
+## 15. Development Approach
 
-This project builds a system involving on-device AI, real-time data pipelines, government workflows, and public infrastructure. Jumping straight to code in this context produces systems that are expensive to change, hard to test, and architecturally inconsistent.
+This project follows a spec-driven development approach where system behavior is defined before implementation begins. The main README.md serves as the comprehensive system specification, ensuring all system behavior is explicitly documented before coding starts.
 
-The workflow:
-
-1. Define problem (human)
-2. Generate specs (AI-assisted)
-3. Surface gaps (AI-assisted)
-4. Answer with domain knowledge (human)
-5. Update specs
-6. Repeat until decisions are explicit and testable
-7. Implement
-
-Every spec in this repository is the output of that process — not a first draft, but a product of deliberate iteration.
+**Current Status:** Implementation in progress  
+- ✅ System specifications complete (this README)  
+- ✅ Frontend development (Flutter)  
+- ✅ Backend development (FastAPI)  
+- 🔄 Integration and testing
 
 ---
 
-## 16. Current Status
+## 16. License
 
-| Spec | Status |
-|------|--------|
-| 01 — System Overview | ✅ Complete |
-| 02 — Frontend Specifications | ✅ Complete |
-| 03 — Backend API Specifications | ✅ Complete |
-| 04 — Data Model Specifications | ✅ Complete |
-| 05 — Infrastructure Specifications | ✅ Complete |
-| 06 — Security Specifications | ✅ Complete |
-| 07 — Observability Specifications | ✅ Complete |
-| Implementation | 🔜 Pending |
-
----
-
-## 17. Related Specifications
-
-| Spec | File |
-|------|------|
-| System Overview | `specs/01-system-overview.md` |
-| Frontend | `specs/02-frontend-specifications.md` |
-| Backend API | `specs/03-backend-api-specifications.md` |
-| Data Model | `specs/04-data-model-specifications.md` |
-| Infrastructure | `specs/05-infrastructure-specifications.md` |
-| Security | `specs/06-security-specifications.md` |
-| Observability | `specs/07-observability-specifications.md` |
-
----
-
-## 18. License
-
-Apache 2.0 (planned)
+Apache 2.0
