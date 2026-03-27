@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:native_exif/native_exif.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart' show supabase;
@@ -31,6 +33,10 @@ class _CameraScreenState extends State<CameraScreen>
   bool _flashOn = false;
   bool _frontCamera = false;
   String? _errorMsg;
+
+  // Holds EXIF-extracted GPS from gallery image (null = use live GPS)
+  double? _exifLat;
+  double? _exifLng;
 
   @override
   void initState() {
@@ -75,6 +81,8 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // ─── Camera Capture ────────────────────────────────────────────────────────
+
   Future<void> _capture() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (_state != UploadState.idle) return;
@@ -86,6 +94,8 @@ class _CameraScreenState extends State<CameraScreen>
       final xfile = await _controller!.takePicture();
       setState(() {
         _capturedFile = File(xfile.path);
+        _exifLat = null; // camera shot → use live GPS
+        _exifLng = null;
         _state = UploadState.idle;
       });
       _showPreviewSheet();
@@ -97,54 +107,148 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  void _showPreviewSheet() {
+  // ─── Gallery Picker ────────────────────────────────────────────────────────
+
+  Future<void> _pickFromGallery() async {
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (picked == null) return;
+
+    final file = File(picked.path);
+
+    // Attempt to read EXIF GPS data (native_exif ^0.7.0 API)
+    double? lat;
+    double? lng;
+    try {
+      final exif = await Exif.fromPath(picked.path);
+      final latLong = await exif.getLatLong();
+      await exif.close();
+      if (latLong != null) {
+        lat = latLong.latitude;
+        lng = latLong.longitude;
+      }
+    } catch (e) {
+      debugPrint('[Gallery] EXIF read error: $e');
+    }
+
+    setState(() {
+      _capturedFile = file;
+      _exifLat = lat;
+      _exifLng = lng;
+    });
+
+    _showPreviewSheet(fromGallery: true, hasExifLocation: lat != null);
+  }
+
+  // ─── Preview Sheet ─────────────────────────────────────────────────────────
+
+  void _showPreviewSheet({
+    bool fromGallery = false,
+    bool hasExifLocation = false,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _PreviewSheet(
         image: _capturedFile!,
-        onConfirm: _upload, // no intensity arg
+        fromGallery: fromGallery,
+        hasExifLocation: hasExifLocation,
+        onConfirm: _upload,
         onRetake: () {
           Navigator.pop(context);
-          setState(() => _capturedFile = null);
+          setState(() {
+            _capturedFile = null;
+            _exifLat = null;
+            _exifLng = null;
+          });
         },
       ),
     );
   }
 
+  // ─── Upload ────────────────────────────────────────────────────────────────
+
   Future<void> _upload() async {
     if (_capturedFile == null) return;
-    Navigator.pop(context); // close preview sheet
-    setState(() => _state = UploadState.uploading);
 
-    try {
-      // ✅ Check & request location permission first
+    // ── Step 1: resolve location BEFORE closing the sheet ──────────────────
+    // Requesting a system permission dialog while Navigator.pop is in-flight
+    // suppresses the dialog silently on Android. Always resolve GPS first.
+    double lat;
+    double lng;
+
+    if (_exifLat != null && _exifLng != null) {
+      // Gallery image with embedded GPS — no permission needed
+      lat = _exifLat!;
+      lng = _exifLng!;
+      debugPrint('[Camera] Using EXIF location: $lat, $lng');
+    } else {
+      // Camera shot or gallery image without EXIF → request live GPS
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          setState(() {
-            _state = UploadState.failure;
-            _errorMsg = 'Location permission is required to submit a report.';
-          });
-          return;
+      }
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Location permission is required to submit a report.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
+        return; // sheet stays open — user can retry or retake
       }
       if (permission == LocationPermission.deniedForever) {
-        await Geolocator.openAppSettings();
-        setState(() {
-          _state = UploadState.failure;
-          _errorMsg =
-              'Location permission permanently denied. Please enable it in Settings.';
-        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Location permanently denied — enable it in Settings.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          await Geolocator.openAppSettings();
+        }
         return;
       }
 
-      // Get location
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Permission granted — get position
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
+        lat = pos.latitude;
+        lng = pos.longitude;
+        debugPrint('[Camera] Using live GPS: $lat, $lng');
+      } catch (e) {
+        debugPrint('[Camera] GPS error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not get location. Try again outdoors.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // ── Step 2: location resolved — now safe to close sheet & start upload ──
+    if (mounted) Navigator.pop(context);
+    setState(() => _state = UploadState.uploading);
+
+    try {
+      // (lat/lng already set above)
 
       // Get Firebase user
       final firebaseUser = FirebaseAuth.instance.currentUser;
@@ -164,11 +268,11 @@ class _CameraScreenState extends State<CameraScreen>
             name = data['full_name'] ?? 'Anonymous';
           }
         } catch (e) {
-          print('[Camera] profile fetch error: $e');
+          debugPrint('[Camera] profile fetch error: $e');
         }
       }
 
-      // Upload image
+      // Upload image to Supabase storage
       final fileName = '${const Uuid().v4()}.jpg';
       final bytes = await _capturedFile!.readAsBytes();
       await supabase.storage
@@ -185,24 +289,26 @@ class _CameraScreenState extends State<CameraScreen>
           .from('test_storage')
           .getPublicUrl(fileName);
 
-      // Insert report
+      // Insert report with resolved coordinates
       await supabase.from('report_submission').insert({
         'image_link': imageLink,
-        'lat': pos.latitude,
-        'long': pos.longitude,
+        'lat': lat,
+        'long': lng,
         'name': name,
         'user_id': userId,
       });
 
       setState(() => _state = UploadState.success);
     } catch (e) {
-      print('[Camera] upload error: $e');
+      debugPrint('[Camera] upload error: $e');
       setState(() {
         _state = UploadState.failure;
         _errorMsg = e.toString();
       });
     }
   }
+
+  // ─── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +326,8 @@ class _CameraScreenState extends State<CameraScreen>
         onDone: () => setState(() {
           _state = UploadState.idle;
           _capturedFile = null;
+          _exifLat = null;
+          _exifLng = null;
         }),
       );
     }
@@ -366,11 +474,11 @@ class _CameraScreenState extends State<CameraScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Gallery (placeholder)
+                    // ✅ Gallery button — now functional
                     _CamButton(
                       icon: Icons.photo_library_rounded,
                       size: 48,
-                      onTap: () {},
+                      onTap: _pickFromGallery,
                     ),
 
                     // Shutter
@@ -426,23 +534,20 @@ class _CameraScreenState extends State<CameraScreen>
 
 // ─── Preview Sheet ─────────────────────────────────────────────────────────────
 
-class _PreviewSheet extends StatefulWidget {
+class _PreviewSheet extends StatelessWidget {
   final File image;
-  final VoidCallback onConfirm; // ✅ no intensity in callback
+  final bool fromGallery;
+  final bool hasExifLocation;
+  final VoidCallback onConfirm;
   final VoidCallback onRetake;
 
   const _PreviewSheet({
     required this.image,
+    required this.fromGallery,
+    required this.hasExifLocation,
     required this.onConfirm,
     required this.onRetake,
   });
-
-  @override
-  State<_PreviewSheet> createState() => _PreviewSheetState();
-}
-
-class _PreviewSheetState extends State<_PreviewSheet> {
-  // ✅ remove _intensity field
 
   @override
   Widget build(BuildContext context) {
@@ -455,6 +560,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Handle bar
           Container(
             width: 36,
             height: 4,
@@ -465,23 +571,65 @@ class _PreviewSheetState extends State<_PreviewSheet> {
           ),
           const SizedBox(height: 16),
 
+          // Image preview
           ClipRRect(
             borderRadius: BorderRadius.circular(AppTheme.radiusMD),
             child: Image.file(
-              widget.image,
+              image,
               height: 200,
               width: double.infinity,
               fit: BoxFit.cover,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
 
-          // ✅ Intensity selector completely removed
+          // ✅ Location source badge
+          if (fromGallery)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: hasExifLocation
+                    ? Colors.green.withOpacity(0.15)
+                    : Colors.orange.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                border: Border.all(
+                  color: hasExifLocation
+                      ? Colors.green.withOpacity(0.5)
+                      : Colors.orange.withOpacity(0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasExifLocation
+                        ? Icons.location_on_rounded
+                        : Icons.location_searching_rounded,
+                    size: 14,
+                    color: hasExifLocation ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasExifLocation
+                        ? 'Location from photo metadata'
+                        : 'No EXIF data — will use current GPS',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: hasExifLocation ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 16),
+
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: widget.onRetake,
+                  onPressed: onRetake,
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.white.withOpacity(0.2)),
                     shape: RoundedRectangleBorder(
@@ -489,9 +637,9 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text(
-                    'Retake',
-                    style: TextStyle(
+                  child: Text(
+                    fromGallery ? 'Cancel' : 'Retake',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
                     ),
@@ -502,7 +650,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: widget.onConfirm, // ✅ no intensity
+                  onPressed: onConfirm,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     shape: RoundedRectangleBorder(
@@ -535,6 +683,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
     );
   }
 }
+
 // ─── Uploading Screen ──────────────────────────────────────────────────────────
 
 class _UploadingScreen extends StatelessWidget {
@@ -608,7 +757,6 @@ class _ResultScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-              // Icon
               Container(
                 width: 100,
                 height: 100,
@@ -643,7 +791,6 @@ class _ResultScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const Spacer(),
-              // CTA
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -738,53 +885,6 @@ class _CamButton extends StatelessWidget {
                 ),
               )
             : Icon(icon, color: Colors.white, size: size * 0.45),
-      ),
-    );
-  }
-}
-
-class _IntensityChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _IntensityChip({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? color.withOpacity(0.2)
-                : Colors.white.withOpacity(0.06),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected ? color : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? color : Colors.white.withOpacity(0.5),
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

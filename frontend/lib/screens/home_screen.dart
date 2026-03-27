@@ -1,4 +1,5 @@
 // lib/screens/home_screen.dart
+import '../widgets/flood_risk_card.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,15 +18,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  // Direct Supabase client — same pattern as your existing code
   static final _supabase = Supabase.instance.client;
 
   String? _displayName;
+  String? _displayEmail;
   bool _loadingName = true;
   int _totalReports = 0;
   int _successReports = 0;
   int _pendingReports = 0;
   bool _loadingStats = true;
+
+  // Key for the avatar widget so we can find its position
+  final GlobalKey _avatarKey = GlobalKey();
 
   @override
   void initState() {
@@ -37,35 +41,25 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _loadDisplayName() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      final email = user?.email;
-      final phone = user?.phoneNumber;
+      if (user == null) return;
 
-      if (user == null) {
-        print('[Home] NO SESSION — user is null');
-        return;
-      }
+      _displayEmail = user.email ?? user.phoneNumber ?? '';
 
-      final idToken = await FirebaseAuth.instance.currentUser!.getIdToken();
-
+      final idToken = await user.getIdToken();
       final res = await http.get(
         Uri.parse('https://bin-production-e68a.up.railway.app/profile'),
         headers: {'Authorization': 'Bearer $idToken'},
       );
 
-      print('[Home] status=${res.statusCode}');
-      print('[Home] body=${res.body}');
-      // if (mounted) {
-      //   setState(() {
-      //     _displayName = res?['full_name'] as String? ?? 'User';
-      //     _loadingName = false;
-      //   });
-      // }
-      final data = jsonDecode(res.body);
-      print('[Home] decoded=$data');
-
-      setState(() {
-        _displayName = data['full_name'] ?? 'User';
-      });
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (mounted) {
+          setState(() {
+            _displayName = data['full_name'] ?? 'User';
+            _loadingName = false;
+          });
+        }
+      }
     } catch (e) {
       print('[Home] _loadDisplayName ERROR → $e');
       if (mounted) setState(() => _loadingName = false);
@@ -77,21 +71,17 @@ class _HomeScreenState extends State<HomeScreen>
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final uid = user.uid;
-
       final reports = await Supabase.instance.client
           .from('report_submission')
           .select('status')
-          .eq('user_id', uid);
+          .eq('user_id', user.uid);
 
       final list = reports as List;
 
       if (mounted) {
         setState(() {
           _totalReports = list.length;
-          _successReports = list
-              .where((r) => r['status'] == 'Resolved') // ✅ exact case match
-              .length;
+          _successReports = list.where((r) => r['status'] == 'Resolved').length;
           _pendingReports = list
               .where(
                 (r) => r['status'] == 'Pending' || r['status'] == 'In Progress',
@@ -114,14 +104,151 @@ class _HomeScreenState extends State<HomeScreen>
     await Future.wait([_loadDisplayName(), _loadStats()]);
   }
 
-  // ── Convenience getters to keep build methods clean ──────────────────────
+  // ── Avatar popup menu ─────────────────────────────────────────────────────
+
+  void _showAccountMenu() {
+    // Find the avatar's position on screen
+    final renderBox =
+        _avatarKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    showMenu(
+      context: context,
+      color: AppTheme.bgCard,
+      elevation: 12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.white.withOpacity(0.07)),
+      ),
+      // Anchor just below the avatar, aligned to its right edge
+      position: RelativeRect.fromLTRB(
+        offset.dx -
+            180 +
+            size.width, // left: push menu left so it doesn't overflow
+        offset.dy + size.height + 8, // top: just below avatar
+        offset.dx + size.width, // right: flush with avatar right edge
+        0,
+      ),
+      items: [
+        // ── Account info header ──────────────────────────────────────────
+        PopupMenuItem(
+          enabled: false,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mini avatar
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppTheme.primary,
+                    ),
+                    child: Center(
+                      child: Text(
+                        _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_displayEmail != null && _displayEmail!.isNotEmpty)
+                          Text(
+                            _displayEmail!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textMuted,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: Colors.white.withOpacity(0.08)),
+            ],
+          ),
+        ),
+
+        // ── Logout ───────────────────────────────────────────────────────
+        PopupMenuItem(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          onTap: _logout,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.logout_rounded,
+                  size: 15,
+                  color: AppTheme.error,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Log out',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const PopupMenuItem(
+          height: 8,
+          enabled: false,
+          child: SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _logout() async {
+    // Small delay so the menu closes cleanly before sign-out
+    await Future.delayed(const Duration(milliseconds: 150));
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+    }
+  }
+
+  // ── Convenience getters ───────────────────────────────────────────────────
+
   String get _name => _displayName ?? 'User';
   bool get _loading => _loadingName || _loadingStats;
-  Map<String, int> get _stats => {
-    'total': _totalReports,
-    'success': _successReports,
-    'pending': _pendingReports,
-  };
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +256,6 @@ class _HomeScreenState extends State<HomeScreen>
       backgroundColor: AppTheme.bgBase,
       body: Stack(
         children: [
-          // Main content
           SafeArea(
             bottom: false,
             child: RefreshIndicator(
@@ -148,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 20),
                     _buildMapCard(),
                     const SizedBox(height: 20),
-                    _buildFloodRiskCard(),
+                    const FloodRiskCard(),
                     const SizedBox(height: 20),
                     _buildTipsCard(),
                   ],
@@ -156,8 +282,6 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-
-          // Floating nav
           Positioned(
             bottom: 0,
             left: 0,
@@ -228,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     )
                   : Text(
-                      'Hello, $_name 👋',
+                      'Hello, $_name',
                       style: Theme.of(context).textTheme.displayMedium,
                     ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.05),
               const SizedBox(height: 2),
@@ -239,9 +363,11 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ),
         ),
-        // Avatar
+
+        // ── Avatar with popup ─────────────────────────────────────────────
         GestureDetector(
-          onTap: () {},
+          key: _avatarKey,
+          onTap: _showAccountMenu,
           child: Container(
             width: 44,
             height: 44,
@@ -273,21 +399,17 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildStatsRow() {
-    final total = _stats['total'] ?? 0;
-    final success = _stats['Resolved'] ?? 0;
-    final pending = _stats['In Progress'] ?? 0;
-
     return Row(
       children: [
         _StatCard(
           label: 'Total\nReports',
-          value: total.toString(),
+          value: _totalReports.toString(),
           color: AppTheme.primary,
           icon: Icons.delete_rounded,
         ),
         const SizedBox(width: 12),
         _StatCard(
-          label: 'Resolved', // ✅ not 'Collected'
+          label: 'Resolved',
           value: _successReports.toString(),
           color: AppTheme.success,
           icon: Icons.check_circle_rounded,
@@ -319,9 +441,7 @@ class _HomeScreenState extends State<HomeScreen>
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Background pattern
             Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
-            // Glow circles
             Positioned(
               right: -20,
               top: -20,
@@ -346,7 +466,6 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
-            // Content
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -432,127 +551,6 @@ class _HomeScreenState extends State<HomeScreen>
     ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.06);
   }
 
-  Widget _buildFloodRiskCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppTheme.bgCard,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLG),
-        boxShadow: AppTheme.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3E0),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.water_damage_rounded,
-                  color: Color(0xFFF57C00),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Flood Risk Index',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.warning.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                ),
-                child: Text(
-                  'MODERATE',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.warning,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Risk gauge placeholder
-          Stack(
-            children: [
-              Container(
-                height: 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.bgOverlay,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              FractionallySizedBox(
-                widthFactor: 0.55,
-                child: Container(
-                  height: 8,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.success, AppTheme.warning],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _RiskTag(label: 'Low', color: AppTheme.success),
-              _RiskTag(
-                label: 'Moderate',
-                color: AppTheme.warning,
-                active: true,
-              ),
-              _RiskTag(label: 'High', color: AppTheme.error),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.bgOverlay,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMD),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 15,
-                  color: AppTheme.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Flood risk data coming soon. Help us by reporting clogged drains!',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.06);
-  }
-
   Widget _buildTipsCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -592,6 +590,8 @@ class _HomeScreenState extends State<HomeScreen>
     ).animate().fadeIn(delay: 300.ms);
   }
 }
+
+// ─── Stat Card ─────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final String label;
@@ -651,42 +651,7 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _RiskTag extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool active;
-
-  const _RiskTag({
-    required this.label,
-    required this.color,
-    this.active = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active ? color : AppTheme.textMuted,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-            color: active ? color : AppTheme.textMuted,
-          ),
-        ),
-      ],
-    );
-  }
-}
+// ─── Dot Grid Painter ──────────────────────────────────────────────────────────
 
 class _DotGridPainter extends CustomPainter {
   @override

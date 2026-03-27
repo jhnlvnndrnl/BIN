@@ -194,189 +194,206 @@ class _OTPScreenState extends State<OTPScreen>
 
     return Scaffold(
       backgroundColor: _bg,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: SlideTransition(
             position: _slideAnim,
-            child: Padding(
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 48),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight:
+                      MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top -
+                      MediaQuery.of(context).padding.bottom,
+                ),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 48),
 
-                  // ── Header ────────────────────────────────────────────
-                  Center(
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _green.withOpacity(0.15),
-                                blurRadius: 20,
-                                offset: const Offset(0, 6),
+                      // ── Header ────────────────────────────────────────────
+                      Center(
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _green.withOpacity(0.15),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.verified_outlined,
-                              color: _green,
-                              size: 30,
+                              child: const Center(
+                                child: Icon(
+                                  Icons.verified_outlined,
+                                  color: _green,
+                                  size: 30,
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Check your messages',
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111111),
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'We sent a 6-digit code to\n$_maskedPhone',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF888888),
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Check your messages',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111111),
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'We sent a 6-digit code to\n$_maskedPhone',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF888888),
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  const SizedBox(height: 40),
+                      const SizedBox(height: 40),
 
-                  // ── OTP Card ──────────────────────────────────────────
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4),
+                      // ── OTP Card ──────────────────────────────────────────
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        // OTP boxes
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(6, (i) => _buildOTPBox(i)),
-                        ),
+                        child: Column(
+                          children: [
+                            // OTP boxes
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: List.generate(
+                                6,
+                                (i) => _buildOTPBox(i),
+                              ),
+                            ),
 
-                        const SizedBox(height: 24),
+                            const SizedBox(height: 24),
 
-                        // Resend
-                        GestureDetector(
-                          onTap: _resendSeconds == 0 ? _resendCode : null,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: _resendSeconds > 0
-                                ? Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    key: const ValueKey('countdown'),
-                                    children: [
-                                      const Icon(
-                                        Icons.timer_outlined,
-                                        size: 14,
-                                        color: Color(0xFFBBBBBB),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Resend in ${_resendSeconds}s',
-                                        style: const TextStyle(
+                            // Resend
+                            GestureDetector(
+                              onTap: _resendSeconds == 0 ? _resendCode : null,
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 300),
+                                child: _resendSeconds > 0
+                                    ? Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        key: const ValueKey('countdown'),
+                                        children: [
+                                          const Icon(
+                                            Icons.timer_outlined,
+                                            size: 14,
+                                            color: Color(0xFFBBBBBB),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Resend in ${_resendSeconds}s',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              color: Color(0xFFAAAAAA),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : const Text(
+                                        'Resend code',
+                                        key: ValueKey('resend'),
+                                        style: TextStyle(
                                           fontSize: 13,
-                                          color: Color(0xFFAAAAAA),
+                                          color: _green,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                    ],
-                                  )
-                                : const Text(
-                                    'Resend code',
-                                    key: ValueKey('resend'),
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: _green,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  // ── Verify Button ─────────────────────────────────────
-                  AnimatedOpacity(
-                    opacity: otpFilled ? 1.0 : 0.5,
-                    duration: const Duration(milliseconds: 200),
-                    child: ElevatedButton(
-                      onPressed: (_isLoading || !otpFilled) ? null : _verifyOTP,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _green,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: _green,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Text(
-                              'Verify & Continue',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.3,
                               ),
                             ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Center(
-                      child: Text(
-                        '← edit mobile number',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFFAAAAAA),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 28),
-                ],
+                      const Spacer(), // works inside IntrinsicHeight
+                      // ── Verify Button ─────────────────────────────────────
+                      AnimatedOpacity(
+                        opacity: otpFilled ? 1.0 : 0.5,
+                        duration: const Duration(milliseconds: 200),
+                        child: ElevatedButton(
+                          onPressed: (_isLoading || !otpFilled)
+                              ? null
+                              : _verifyOTP,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _green,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: _green,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Verify & Continue',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: const Center(
+                          child: Text(
+                            '← edit mobile number',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFFAAAAAA),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 28),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
