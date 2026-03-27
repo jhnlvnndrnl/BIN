@@ -206,32 +206,41 @@ The following are explicitly deferred to future development horizons:
 
 ```
 bin/
-├── README.md
+├── README.md                           # Project overview and specifications
+├── LICENSE                             # Apache 2.0 license
 │
-├── specs/                              # System specifications (read these first)
-│   ├── 01-system-overview.md
-│   ├── 02-frontend-specifications.md
-│   ├── 03-backend-api-specifications.md
-│   ├── 04-data-model-specifications.md
-│   ├── 05-infrastructure-specifications.md
-│   ├── 06-security-specifications.md
-│   └── 07-observability-specifications.md
+├── frontend/                           # Flutter mobile/web application
+│   ├── README.md                       # Frontend setup and prerequisites
+│   ├── lib/                            # Flutter source code
+│   ├── android/                        # Android platform files
+│   ├── ios/                            # iOS platform files
+│   ├── web/                            # Web platform files
+│   ├── linux/                          # Linux platform files
+│   ├── macos/                          # macOS platform files
+│   ├── windows/                        # Windows platform files
+│   ├── test/                           # Flutter tests
+│   ├── pubspec.yaml                    # Flutter dependencies
+│   ├── firebase.json                   # Firebase configuration
+│   └── analysis_options.yaml           # Dart analysis options
 │
-├── archive/                            # Original plans and superseded decisions
-│   └── plans/
-│       └── initial-plan.md  
-│
-├── frontend/                           # Flutter app (mobile) 
-└── backend/                           # FastAPI backend   
+└── backend/                            # FastAPI backend application
+    ├── README.md                       # Backend setup and prerequisites
+    └── fastapi/                        # FastAPI application
+        ├── main.py                     # Main FastAPI application
+        ├── requirements.txt            # Python dependencies
+        ├── Procfile                    # Railway deployment configuration
+        ├── serviceAccountKey.json      # Firebase service account key
+        └── .env                        # Environment variables
 ```
 
 ---
 
 ## 14. How to Read This Project
 
-**Understand the system** → Read `specs/01` through `specs/07` in order.  
-**Understand the thinking** → Read `archive/plans/initial-plan.md`, then `HISTORY.md`, then `clarifications/`.  
-**Understand the work ahead** → Read `tasks.md`.
+**Get started** → Read this README.md for project overview  
+**Set up development** → Follow frontend/README.md and backend/README.md  
+**Understand the system** → This README contains the complete system specifications  
+**Start developing** → Run the applications locally using the setup guides
 
 ---
 
